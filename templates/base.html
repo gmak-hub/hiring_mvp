@@ -10,7 +10,9 @@
 
   {% if is_impersonating and user %}
   <div class="impersonation-banner">
-    <span>Você está visualizando como <strong>{{ user.name }}</strong> ({{ user.company.name if user.company else '—' }})</span>
+    <span>Você está visualizando como <strong>{{ user.name }}</strong>
+      ({{ user.company.name if user.company else '—' }}
+      · {{ user.role }})</span>
     <form method="post" action="/admin/parar-impersonar" class="inline-form">
       <button type="submit" class="btn btn-sm btn-ghost">Sair da visualização</button>
     </form>
@@ -25,10 +27,8 @@
       {% if user.role == 'superadmin' and not is_impersonating %}
         <a href="/admin" class="btn btn-sm btn-ghost">⚙ Admin</a>
       {% endif %}
-      {% if user.role in ('admin', 'superadmin') and not is_impersonating %}
-        {% if user.role == 'admin' %}
-          <a href="/empresa/usuarios" class="btn btn-sm btn-ghost">Usuários</a>
-        {% endif %}
+      {% if user.role == 'admin' and not is_impersonating %}
+        <a href="/empresa/usuarios" class="btn btn-sm btn-ghost">Usuários</a>
       {% endif %}
 
       <div class="nav-user-info">
@@ -47,6 +47,7 @@
         {% endif %}
       </div>
 
+      <a href="/conta" class="btn btn-sm btn-ghost">Minha Conta</a>
       <a href="/logout" class="btn btn-sm btn-ghost">Sair</a>
     </div>
     {% endif %}

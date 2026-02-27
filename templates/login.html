@@ -16,6 +16,12 @@
         <div class="login-error">{{ error }}</div>
       {% endif %}
 
+      {% if msg == 'cadastro_enviado' %}
+        <div style="background:#dcfce7; border:1px solid #bbf7d0; color:#15803d; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
+          Cadastro enviado! Aguardando aprovação do administrador.
+        </div>
+      {% endif %}
+
       <form method="post" action="/login">
         <div class="form-group">
           <label for="empresa">Empresa</label>
@@ -58,6 +64,11 @@
           </button>
         </div>
       </form>
+
+      <div style="text-align:center; margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid var(--border); font-size:0.875rem; color:var(--text-muted);">
+        Não tem conta?
+        <a href="/registro" style="color:var(--accent); font-weight:500;">Criar empresa e conta</a>
+      </div>
     </div>
   </div>
 </body>

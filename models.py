@@ -1,20 +1,36 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from sqlalchemy.types import JSON
+import os
 from datetime import datetime
 
-DATABASE_URL = "sqlite:///./hiring.db"
+from dotenv import load_dotenv
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.types import JSON
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+load_dotenv()
+
+# ── Database URL ───────────────────────────────────────────────────────────────
+# Supabase/Heroku expose "postgres://" but SQLAlchemy requires "postgresql://"
+_raw_url = os.getenv("DATABASE_URL", "sqlite:///./hiring.db")
+DATABASE_URL = _raw_url.replace("postgres://", "postgresql://", 1) if _raw_url.startswith("postgres://") else _raw_url
+
+_is_sqlite = DATABASE_URL.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
+
+engine = create_engine(DATABASE_URL, connect_args=_connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
+# ── Models ─────────────────────────────────────────────────────────────────────
 
 class Company(Base):
     __tablename__ = "companies"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True)
+    # status: pending | active | blocked
+    status = Column(String(20), nullable=False, default="active")
+    # kept for backward compat — status is canonical going forward
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -31,6 +47,9 @@ class User(Base):
     name = Column(String(255), nullable=False)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="avaliador")  # avaliador | admin | superadmin
+    # status: pending | active | blocked
+    status = Column(String(20), nullable=False, default="active")
+    # kept for backward compat — status is canonical going forward
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -69,6 +88,8 @@ class Candidate(Base):
     job = relationship("Job", back_populates="candidates")
 
 
+# ── DB helpers ─────────────────────────────────────────────────────────────────
+
 def get_db():
     db = SessionLocal()
     try:
@@ -78,28 +99,54 @@ def get_db():
 
 
 def _migrate_db():
-    """Add new columns to existing tables without destroying data (SQLite compatible)."""
-    from sqlalchemy import text, inspect
+    """
+    Idempotently add new columns to existing tables.
+    Works for both SQLite and PostgreSQL by checking column existence first.
+    """
+    from sqlalchemy import inspect, text
 
     with engine.connect() as conn:
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
 
-        if "jobs" in existing_tables:
-            job_cols = {c["name"] for c in inspector.get_columns("jobs")}
-            if "company_id" not in job_cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN company_id INTEGER REFERENCES companies(id)"))
-            if "is_deleted" not in job_cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0"))
-            if "deleted_at" not in job_cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN deleted_at DATETIME"))
+        def _col_names(table: str) -> set:
+            return {c["name"] for c in inspector.get_columns(table)}
 
+        # ── jobs ──────────────────────────────────────────────────────────────
+        if "jobs" in existing_tables:
+            cols = _col_names("jobs")
+            if "company_id" not in cols:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN company_id INTEGER REFERENCES companies(id)"))
+            if "is_deleted" not in cols:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0"))
+            if "deleted_at" not in cols:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN deleted_at TIMESTAMP"))
+
+        # ── candidates ────────────────────────────────────────────────────────
         if "candidates" in existing_tables:
-            cand_cols = {c["name"] for c in inspector.get_columns("candidates")}
-            if "is_deleted" not in cand_cols:
+            cols = _col_names("candidates")
+            if "is_deleted" not in cols:
                 conn.execute(text("ALTER TABLE candidates ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0"))
-            if "deleted_at" not in cand_cols:
-                conn.execute(text("ALTER TABLE candidates ADD COLUMN deleted_at DATETIME"))
+            if "deleted_at" not in cols:
+                conn.execute(text("ALTER TABLE candidates ADD COLUMN deleted_at TIMESTAMP"))
+
+        # ── companies ─────────────────────────────────────────────────────────
+        if "companies" in existing_tables:
+            cols = _col_names("companies")
+            if "status" not in cols:
+                conn.execute(text("ALTER TABLE companies ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'"))
+
+        # ── users ─────────────────────────────────────────────────────────────
+        if "users" in existing_tables:
+            cols = _col_names("users")
+            if "status" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'"))
+                # Sync status from existing is_active flag
+                conn.execute(text(
+                    "UPDATE users SET status = CASE WHEN is_active = 1 THEN 'active' ELSE 'blocked' END"
+                    if _is_sqlite else
+                    "UPDATE users SET status = CASE WHEN is_active = TRUE THEN 'active' ELSE 'blocked' END"
+                ))
 
         conn.commit()
 

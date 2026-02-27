@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Minha Conta — HiringEval{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Minha Conta</h1>
+  <a href="/" class="btn btn-ghost btn-sm">← Voltar</a>
+</div>
+
+{% if msg == 'salvo' %}
+  <div class="msg msg-success">✓ Alterações salvas com sucesso.</div>
+{% endif %}
+
+{% if errors %}
+  <div class="msg msg-error" style="flex-direction:column; align-items:flex-start; gap:0.25rem;">
+    {% for e in errors %}
+      <span>• {{ e }}</span>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<form method="post" action="/conta">
+  <!-- Nome -->
+  <div class="account-section">
+    <div class="account-section-title">Informações pessoais</div>
+
+    <div class="form-group">
+      <label for="nome">Nome completo</label>
+      <input type="text" id="nome" name="nome" value="{{ user.name }}" required style="max-width:400px;">
+    </div>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Usuário</label>
+      <input type="text" value="{{ user.username }}" disabled style="max-width:300px; opacity:0.6; cursor:not-allowed;">
+      <span class="label-hint">O nome de usuário não pode ser alterado.</span>
+    </div>
+  </div>
+
+  <!-- Senha -->
+  <div class="account-section">
+    <div class="account-section-title">Alterar senha</div>
+    <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:1rem;">
+      Deixe os campos abaixo em branco para manter a senha atual.
+    </p>
+
+    <div class="form-group">
+      <label for="senha_atual">Senha atual</label>
+      <input type="password" id="senha_atual" name="senha_atual" placeholder="••••••••" style="max-width:300px;" autocomplete="current-password">
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.875rem; max-width:600px;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="nova_senha">Nova senha</label>
+        <input type="password" id="nova_senha" name="nova_senha" placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="confirmar_nova_senha">Confirmar nova senha</label>
+        <input type="password" id="confirmar_nova_senha" name="confirmar_nova_senha" placeholder="••••••••" autocomplete="new-password">
+      </div>
+    </div>
+    <span class="label-hint" style="margin-top:0.5rem; display:block;">Mínimo 6 caracteres</span>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Salvar alterações</button>
+    <a href="/" class="btn btn-ghost">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

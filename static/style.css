@@ -683,3 +683,76 @@ table tr:hover td { background: #fafafa; }
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* ── Status badges ───────────────────────────────────── */
+.badge-orange { background: #fff7ed; color: #c2410c; }
+
+/* ── Filter tabs ─────────────────────────────────────── */
+.filter-tabs {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.filter-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.12s;
+}
+.filter-tab:hover { background: var(--bg); color: var(--text); text-decoration: none; }
+.filter-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Inline edit form in table ───────────────────────── */
+.edit-form-row {
+  display: none;
+  padding: 0.75rem 0.875rem;
+  background: #f8fafc;
+  border-top: 1px solid var(--border);
+}
+.edit-form-row.open { display: flex; gap: 0.625rem; align-items: center; }
+.edit-form-row input[type="text"] {
+  flex: 1;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+}
+.edit-form-row input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── Conta / Account page ────────────────────────────── */
+.account-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  max-width: 560px;
+}
+
+.account-section-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}

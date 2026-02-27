@@ -1,14 +1,24 @@
-import os
+"""
+AI client for HiringEval — Anthropic Claude integration.
+
+Error hierarchy:
+  AIError (base)
+    AIConfigError   — API key missing or empty in .env
+    AIAuthError     — SDK rejected the key (wrong/revoked)
+    AITimeoutError  — API took too long
+    AIParsingError  — Model returned non-JSON or unexpected shape
+"""
+
 import json
-from anthropic import Anthropic
+import os
+
+from anthropic import Anthropic, APIConnectionError, APIStatusError, APITimeoutError
 from dotenv import load_dotenv
 
 load_dotenv()
 
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 MODELO = "claude-sonnet-4-6"
 
-# Mapeamento de valores de confiança para forma canônica em PT-BR
 MAPA_CONFIANCA = {
     "baixo": "Baixo", "low": "Baixo",
     "médio": "Médio", "medio": "Médio", "medium": "Médio",
@@ -16,8 +26,53 @@ MAPA_CONFIANCA = {
 }
 
 
+# ── Custom exceptions ──────────────────────────────────────────────────────────
+
+class AIError(Exception):
+    """Base class for all AI-related errors."""
+
+
+class AIConfigError(AIError):
+    """ANTHROPIC_API_KEY ausente ou vazia no .env"""
+
+
+class AIAuthError(AIError):
+    """Chave rejeitada pela API (inválida ou revogada)."""
+
+
+class AITimeoutError(AIError):
+    """A requisição demorou mais que o esperado."""
+
+
+class AIParsingError(AIError):
+    """A API retornou conteúdo inesperado (não-JSON ou shape errado)."""
+
+
+# ── Lazy client ────────────────────────────────────────────────────────────────
+
+_client: "Anthropic | None" = None
+
+
+def _get_client() -> Anthropic:
+    global _client
+    if _client is not None:
+        return _client
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key or not api_key.strip():
+        raise AIConfigError(
+            "ANTHROPIC_API_KEY não está configurada. "
+            "Copie .env.example para .env e adicione sua chave de API Anthropic."
+        )
+
+    _client = Anthropic(api_key=api_key.strip())
+    return _client
+
+
+# ── Utilities ──────────────────────────────────────────────────────────────────
+
 def _extrair_json(texto: str) -> str:
-    """Remove blocos de markdown e retorna apenas o JSON puro."""
+    """Remove markdown code fences and return the raw JSON string."""
     texto = texto.strip()
     if texto.startswith("```"):
         linhas = texto.split("\n")
@@ -33,10 +88,38 @@ def _extrair_json(texto: str) -> str:
 
 
 def _numerar_linhas(transcricao: str) -> str:
-    """Adiciona número de linha a cada linha da transcrição."""
+    """Add line numbers to each line of a transcript."""
     linhas = transcricao.strip().split("\n")
     return "\n".join(f"[{i + 1}] {linha}" for i, linha in enumerate(linhas))
 
+
+def _chamar_api(prompt: str, max_tokens: int) -> str:
+    """
+    Call the Anthropic API and return the text of the first content block.
+    Translates SDK exceptions to our AIError hierarchy.
+    """
+    try:
+        client = _get_client()
+        resposta = client.messages.create(
+            model=MODELO,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return resposta.content[0].text
+    except AIConfigError:
+        raise
+    except (TypeError, APIStatusError) as e:
+        msg = str(e)
+        if "authentication" in msg.lower() or "api_key" in msg.lower() or "401" in msg:
+            raise AIAuthError(f"Chave de API inválida ou revogada: {msg}") from e
+        raise AIError(f"Erro inesperado na API Anthropic: {msg}") from e
+    except APITimeoutError as e:
+        raise AITimeoutError("A requisição à API expirou. Aguarde alguns segundos e tente novamente.") from e
+    except APIConnectionError as e:
+        raise AIError(f"Erro de conexão com a API Anthropic: {e}") from e
+
+
+# ── Public functions ───────────────────────────────────────────────────────────
 
 def gerar_scorecard(nome_cargo: str, descricao_vaga: str) -> dict:
     prompt = f"""Você é um consultor especialista em recrutamento e seleção. Gere um scorecard de avaliação rigoroso para o cargo descrito abaixo.
@@ -79,19 +162,22 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
   ]
 }}"""
 
-    resposta = client.messages.create(
-        model=MODELO,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    texto = _chamar_api(prompt, max_tokens=4096)
 
-    bruto = _extrair_json(resposta.content[0].text)
-    dados = json.loads(bruto)
+    try:
+        bruto = _extrair_json(texto)
+        dados = json.loads(bruto)
+    except json.JSONDecodeError as e:
+        print(f"[AI PARSING ERROR] Resposta bruta do scorecard:\n{texto}")
+        raise AIParsingError(f"A IA retornou JSON inválido no scorecard: {e}") from e
 
     criterios = dados.get("criterios", [])
     if len(criterios) != 5:
-        raise ValueError(f"Esperado 5 critérios, recebido {len(criterios)}")
+        raise AIParsingError(
+            f"Esperado 5 critérios, recebido {len(criterios)}. Tente novamente."
+        )
 
+    # Normalize weights to sum to exactly 100
     total = sum(c["peso"] for c in criterios)
     if total != 100:
         for c in criterios:
@@ -151,16 +237,16 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
   "nota_final": 64.0
 }}"""
 
-    resposta = client.messages.create(
-        model=MODELO,
-        max_tokens=6144,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    texto = _chamar_api(prompt, max_tokens=6144)
 
-    bruto = _extrair_json(resposta.content[0].text)
-    dados = json.loads(bruto)
+    try:
+        bruto = _extrair_json(texto)
+        dados = json.loads(bruto)
+    except json.JSONDecodeError as e:
+        print(f"[AI PARSING ERROR] Resposta bruta da avaliação:\n{texto}")
+        raise AIParsingError(f"A IA retornou JSON inválido na avaliação: {e}") from e
 
-    # Normaliza confiança e recalcula contribuições ponderadas no servidor
+    # Normalize confidence labels and recalculate weighted contributions server-side
     for av in dados["avaliacoes"]:
         val = av.get("confianca", "").lower().strip()
         av["confianca"] = MAPA_CONFIANCA.get(val, "Baixo")

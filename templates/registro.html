@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Criar Conta — HiringEval</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-box" style="max-width:480px;">
+      <div class="login-logo">HiringEval</div>
+      <p class="login-subtitle">Crie sua empresa e conta de administrador</p>
+
+      {% if errors %}
+        <div style="background:#fee2e2; border:1px solid #fecaca; color:#dc2626; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
+          {% for e in errors %}
+            <div>• {{ e }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" action="/registro">
+        <div class="form-group">
+          <label for="nome_empresa">Nome da empresa <span style="color:#dc2626;">*</span></label>
+          <input
+            type="text"
+            id="nome_empresa"
+            name="nome_empresa"
+            placeholder="Ex: Acme Tecnologia"
+            required
+            value="{{ form.nome_empresa if form else '' }}"
+          >
+        </div>
+
+        <div style="height:1px; background:var(--border); margin:1.25rem 0;"></div>
+        <p style="font-size:0.8125rem; color:var(--text-muted); margin-bottom:1rem;">Conta do administrador da empresa</p>
+
+        <div class="form-group">
+          <label for="nome">Seu nome completo <span style="color:#dc2626;">*</span></label>
+          <input
+            type="text"
+            id="nome"
+            name="nome"
+            placeholder="Ex: Maria Silva"
+            required
+            value="{{ form.nome if form else '' }}"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="usuario">Usuário (login) <span style="color:#dc2626;">*</span></label>
+          <input
+            type="text"
+            id="usuario"
+            name="usuario"
+            placeholder="Ex: maria.silva"
+            required
+            autocomplete="username"
+            value="{{ form.usuario if form else '' }}"
+          >
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label for="senha">Senha <span style="color:#dc2626;">*</span></label>
+            <input
+              type="password"
+              id="senha"
+              name="senha"
+              placeholder="••••••••"
+              required
+              autocomplete="new-password"
+            >
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label for="confirmar_senha">Confirmar senha <span style="color:#dc2626;">*</span></label>
+            <input
+              type="password"
+              id="confirmar_senha"
+              name="confirmar_senha"
+              placeholder="••••••••"
+              required
+              autocomplete="new-password"
+            >
+          </div>
+        </div>
+
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:0.5rem;">
+          Mínimo 6 caracteres
+        </p>
+
+        <div style="margin-top:1.5rem;">
+          <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+            Criar Conta e Empresa
+          </button>
+        </div>
+      </form>
+
+      <div style="text-align:center; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border); font-size:0.875rem; color:var(--text-muted);">
+        Já tem conta?
+        <a href="/login" style="color:var(--accent); font-weight:500;">Fazer login</a>
+      </div>
+
+      <div style="margin-top:1rem; padding:0.75rem; background:#f8fafc; border-radius:6px; font-size:0.8125rem; color:var(--text-muted); text-align:center;">
+        Após o cadastro, sua conta aguardará aprovação do administrador antes de ter acesso.
+      </div>
+    </div>
+  </div>
+</body>
+</html>

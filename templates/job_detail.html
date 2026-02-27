@@ -21,10 +21,27 @@
 
 {% if msg == 'scorecard_gerado' %}
   <div class="msg msg-success">✓ Scorecard gerado com sucesso.</div>
-{% elif msg == 'erro' %}
-  <div class="msg msg-error">Erro ao gerar scorecard. Verifique a descrição da vaga e tente novamente.</div>
-{% elif msg == 'erro_avaliacao' %}
-  <div class="msg msg-error">Erro ao avaliar candidato. Tente novamente.</div>
+{% elif msg == 'api_nao_configurada' %}
+  <div class="msg msg-error">
+    <strong>API não configurada.</strong> O arquivo <code>.env</code> não existe ou não contém <code>ANTHROPIC_API_KEY</code>.
+    Copie <code>.env.example</code> para <code>.env</code> e adicione sua chave.
+  </div>
+{% elif msg == 'erro_ai_auth' %}
+  <div class="msg msg-error">
+    <strong>Chave de API inválida ou revogada.</strong> Verifique o valor de <code>ANTHROPIC_API_KEY</code> no arquivo <code>.env</code>.
+  </div>
+{% elif msg == 'erro_ai_timeout' %}
+  <div class="msg msg-error">
+    <strong>A IA demorou demais para responder.</strong> Aguarde alguns segundos e tente novamente.
+  </div>
+{% elif msg == 'erro_ai_parsing' %}
+  <div class="msg msg-error">
+    <strong>A IA retornou um formato inesperado.</strong> Tente novamente — pode ser instabilidade temporária do modelo.
+  </div>
+{% elif msg == 'erro' or msg == 'erro_avaliacao' %}
+  <div class="msg msg-error">
+    <strong>Erro inesperado.</strong> Verifique os logs do servidor para mais detalhes.
+  </div>
 {% endif %}
 
 <!-- Descrição da Vaga -->

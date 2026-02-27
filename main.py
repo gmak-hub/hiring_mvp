@@ -1,4 +1,5 @@
 import os
+import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 import ai_client
+from ai_client import AIAuthError, AIConfigError, AIParsingError, AITimeoutError
 from auth import (
     RequiresLoginException,
     authenticate_user,
@@ -18,6 +20,7 @@ from auth import (
     hash_password,
     require_admin,
     require_superadmin,
+    verify_password,
 )
 from models import Candidate, Company, Job, SessionLocal, User, create_tables, get_db
 
@@ -28,21 +31,21 @@ SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "hiring-eval-secret-key-change-in-p
 
 def _seed_initial_data(db: Session) -> None:
     """Create default company, assign orphan jobs, and ensure a superadmin exists."""
-    # Create default company if none exist
     if db.query(Company).count() == 0:
-        default_company = Company(name="Empresa Padrão")
+        default_company = Company(name="Empresa Padrão", status="active")
         db.add(default_company)
         db.flush()
-        # Assign any pre-existing jobs (no company) to this company
-        db.query(Job).filter(Job.company_id == None).update({"company_id": default_company.id})  # noqa: E711
+        db.query(Job).filter(Job.company_id == None).update(  # noqa: E711
+            {"company_id": default_company.id}
+        )
 
-    # Create superadmin if none exists
     if not db.query(User).filter(User.role == "superadmin").first():
         superadmin = User(
             username="admin",
             name="Super Admin",
             password_hash=hash_password("admin123"),
             role="superadmin",
+            status="active",
             company_id=None,
             is_active=True,
         )
@@ -98,13 +101,28 @@ def ctx(request: Request, current_user: User, **extra) -> dict:
     }
 
 
+# ── AI error → msg code mapping ───────────────────────────────────────────────
+
+def _ai_msg_code(exc: Exception) -> str:
+    """Map an AI exception to a URL msg param."""
+    if isinstance(exc, AIConfigError):
+        return "api_nao_configurada"
+    if isinstance(exc, AIAuthError):
+        return "erro_ai_auth"
+    if isinstance(exc, AITimeoutError):
+        return "erro_ai_timeout"
+    if isinstance(exc, AIParsingError):
+        return "erro_ai_parsing"
+    return "erro"
+
+
 # ── Auth routes ────────────────────────────────────────────────────────────────
 
 @app.get("/login", response_class=HTMLResponse)
-def pagina_login(request: Request):
+def pagina_login(request: Request, msg: str = None):
     if request.session.get("user_id"):
         return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse("login.html", {"request": request, "msg": msg})
 
 
 @app.post("/login")
@@ -115,14 +133,34 @@ def fazer_login(
     senha: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    user = authenticate_user(db, usuario, senha)
-    if not user:
+    user, reason = authenticate_user(db, usuario, senha)
+
+    if user is None:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "Usuário ou senha incorretos"},
             status_code=401,
         )
 
+    if reason == "pending":
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "error": "Sua conta ainda aguarda aprovação. "
+                         "Você será notificado quando o acesso for liberado.",
+            },
+            status_code=401,
+        )
+
+    if reason == "blocked":
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Conta bloqueada. Entre em contato com o administrador."},
+            status_code=401,
+        )
+
+    # reason == "active" — validate company for non-superadmin
     if user.role != "superadmin":
         if not user.company:
             return templates.TemplateResponse(
@@ -130,10 +168,16 @@ def fazer_login(
                 {"request": request, "error": "Usuário sem empresa associada. Contate o administrador."},
                 status_code=401,
             )
+        if user.company.status != "active":
+            return templates.TemplateResponse(
+                "login.html",
+                {"request": request, "error": "Empresa pendente de aprovação ou bloqueada."},
+                status_code=401,
+            )
         if empresa.strip().lower() != user.company.name.lower():
             return templates.TemplateResponse(
                 "login.html",
-                {"request": request, "error": "Empresa não corresponde a este usuário"},
+                {"request": request, "error": "Empresa não corresponde a este usuário."},
                 status_code=401,
             )
 
@@ -148,11 +192,127 @@ def fazer_logout(request: Request):
     return RedirectResponse(url="/login", status_code=303)
 
 
+# ── Public registration ────────────────────────────────────────────────────────
+
+@app.get("/registro", response_class=HTMLResponse)
+def pagina_registro(request: Request):
+    if request.session.get("user_id"):
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse("registro.html", {"request": request})
+
+
+@app.post("/registro")
+def fazer_registro(
+    request: Request,
+    nome_empresa: str = Form(...),
+    nome: str = Form(...),
+    usuario: str = Form(...),
+    senha: str = Form(...),
+    confirmar_senha: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    errors = []
+
+    if senha != confirmar_senha:
+        errors.append("As senhas não coincidem.")
+
+    if len(senha) < 6:
+        errors.append("A senha deve ter pelo menos 6 caracteres.")
+
+    if db.query(Company).filter(Company.name.ilike(nome_empresa.strip())).first():
+        errors.append(f'Já existe uma empresa com o nome "{nome_empresa.strip()}".')
+
+    if db.query(User).filter(User.username == usuario.strip()).first():
+        errors.append(f'O usuário "{usuario.strip()}" já está em uso.')
+
+    if errors:
+        return templates.TemplateResponse(
+            "registro.html",
+            {"request": request, "errors": errors,
+             "form": {"nome_empresa": nome_empresa, "nome": nome, "usuario": usuario}},
+            status_code=422,
+        )
+
+    # Create pending company + admin user
+    new_company = Company(name=nome_empresa.strip(), status="pending")
+    db.add(new_company)
+    db.flush()
+
+    new_user = User(
+        company_id=new_company.id,
+        username=usuario.strip(),
+        name=nome.strip(),
+        password_hash=hash_password(senha),
+        role="admin",
+        status="pending",
+        is_active=False,
+    )
+    db.add(new_user)
+    db.commit()
+
+    return RedirectResponse(url="/login?msg=cadastro_enviado", status_code=303)
+
+
+# ── Account management ─────────────────────────────────────────────────────────
+
+@app.get("/conta", response_class=HTMLResponse)
+def pagina_conta(
+    request: Request,
+    current_user: User = Depends(get_actual_user),
+    msg: str = None,
+):
+    return templates.TemplateResponse("conta.html", ctx(request, current_user, msg=msg))
+
+
+@app.post("/conta")
+def atualizar_conta(
+    request: Request,
+    nome: str = Form(...),
+    senha_atual: str = Form(""),
+    nova_senha: str = Form(""),
+    confirmar_nova_senha: str = Form(""),
+    current_user: User = Depends(get_actual_user),
+    db: Session = Depends(get_db),
+):
+    errors = []
+
+    # Reload user from DB to make changes
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    # Update name
+    if nome.strip():
+        user.name = nome.strip()
+
+    # Change password (only if fields are filled)
+    if nova_senha or senha_atual:
+        if not senha_atual:
+            errors.append("Informe a senha atual para trocar a senha.")
+        elif not verify_password(senha_atual, user.password_hash):
+            errors.append("Senha atual incorreta.")
+        elif len(nova_senha) < 6:
+            errors.append("A nova senha deve ter pelo menos 6 caracteres.")
+        elif nova_senha != confirmar_nova_senha:
+            errors.append("As novas senhas não coincidem.")
+        else:
+            user.password_hash = hash_password(nova_senha)
+
+    if errors:
+        db.rollback()
+        return templates.TemplateResponse(
+            "conta.html",
+            ctx(request, current_user, errors=errors),
+            status_code=422,
+        )
+
+    db.commit()
+    return RedirectResponse(url="/conta?msg=salvo", status_code=303)
+
+
 # ── Job helpers ────────────────────────────────────────────────────────────────
 
-def _get_job(db: Session, job_id: int, user: User) -> Job | None:
+def _get_job(db: Session, job_id: int, user: User) -> "Job | None":
     """Fetch active job visible to this user (enforces company isolation)."""
-    q = db.query(Job).filter(Job.id == job_id, Job.is_deleted == False)
+    q = db.query(Job).filter(Job.id == job_id, Job.is_deleted == False)  # noqa: E712
     if user.role != "superadmin":
         q = q.filter(Job.company_id == user.company_id)
     return q.first()
@@ -166,7 +326,7 @@ def pagina_inicial(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Job).filter(Job.is_deleted == False)
+    q = db.query(Job).filter(Job.is_deleted == False)  # noqa: E712
     if current_user.role != "superadmin":
         q = q.filter(Job.company_id == current_user.company_id)
     cargos = q.order_by(Job.created_at.desc()).all()
@@ -183,7 +343,6 @@ def formulario_novo_cargo(
 
 @app.post("/cargos")
 def criar_cargo(
-    request: Request,
     name: str = Form(...),
     description: str = Form(...),
     current_user: User = Depends(get_current_user),
@@ -233,8 +392,10 @@ def gerar_scorecard_rota(
         db.commit()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=scorecard_gerado", status_code=303)
     except Exception as e:
-        print(f"[erro scorecard] {e}")
-        return RedirectResponse(url=f"/cargos/{cargo_id}?msg=erro", status_code=303)
+        code = _ai_msg_code(e)
+        print(f"[SCORECARD ERROR] type={type(e).__name__} code={code} cargo_id={cargo_id}")
+        print(traceback.format_exc())
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
 
 
 @app.post("/cargos/{cargo_id}/excluir")
@@ -293,9 +454,11 @@ def criar_candidato(
             url=f"/cargos/{cargo_id}/candidatos/{candidato.id}", status_code=303
         )
     except Exception as e:
-        print(f"[erro avaliação] {e}")
+        code = _ai_msg_code(e)
+        print(f"[AVALIAÇÃO ERROR] type={type(e).__name__} code={code} cargo_id={cargo_id}")
+        print(traceback.format_exc())
         db.rollback()
-        return RedirectResponse(url=f"/cargos/{cargo_id}?msg=erro_avaliacao", status_code=303)
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
 
 
 @app.get("/cargos/{cargo_id}/candidatos/{candidato_id}", response_class=HTMLResponse)
@@ -314,7 +477,7 @@ def detalhe_candidato(
         .filter(
             Candidate.id == candidato_id,
             Candidate.job_id == cargo_id,
-            Candidate.is_deleted == False,
+            Candidate.is_deleted == False,  # noqa: E712
         )
         .first()
     )
@@ -338,7 +501,11 @@ def excluir_candidato(
         return RedirectResponse(url="/", status_code=303)
     candidato = (
         db.query(Candidate)
-        .filter(Candidate.id == candidato_id, Candidate.job_id == cargo_id, Candidate.is_deleted == False)
+        .filter(
+            Candidate.id == candidato_id,
+            Candidate.job_id == cargo_id,
+            Candidate.is_deleted == False,  # noqa: E712
+        )
         .first()
     )
     if candidato:
@@ -353,14 +520,33 @@ def excluir_candidato(
 @app.get("/admin", response_class=HTMLResponse)
 def painel_admin(
     request: Request,
+    empresa_id: int = None,
+    status_filter: str = "todos",
     actual_user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
     empresas = db.query(Company).order_by(Company.created_at.desc()).all()
-    usuarios = db.query(User).order_by(User.created_at.desc()).all()
+
+    # Build user query with optional filters
+    q = db.query(User).order_by(User.created_at.desc())
+    if empresa_id:
+        q = q.filter(User.company_id == empresa_id)
+    if status_filter != "todos":
+        q = q.filter(User.status == status_filter)
+    usuarios = q.all()
+
+    selected_company = db.query(Company).filter(Company.id == empresa_id).first() if empresa_id else None
+
     return templates.TemplateResponse(
         "admin/dashboard.html",
-        ctx(request, actual_user, empresas=empresas, usuarios=usuarios),
+        ctx(
+            request, actual_user,
+            empresas=empresas,
+            usuarios=usuarios,
+            empresa_id=empresa_id,
+            status_filter=status_filter,
+            selected_company=selected_company,
+        ),
     )
 
 
@@ -371,7 +557,62 @@ def criar_empresa(
     db: Session = Depends(get_db),
 ):
     if not db.query(Company).filter(Company.name == nome.strip()).first():
-        db.add(Company(name=nome.strip()))
+        db.add(Company(name=nome.strip(), status="active"))
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/empresas/{empresa_id}/status")
+def mudar_status_empresa(
+    empresa_id: int,
+    novo_status: str = Form(...),
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    empresa = db.query(Company).filter(Company.id == empresa_id).first()
+    if empresa and novo_status in ("pending", "active", "blocked"):
+        empresa.status = novo_status
+        # When approving a company, also approve its pending admin user
+        if novo_status == "active":
+            db.query(User).filter(
+                User.company_id == empresa_id,
+                User.role == "admin",
+                User.status == "pending",
+            ).update({"status": "active", "is_active": True})
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/empresas/{empresa_id}/editar")
+def editar_empresa(
+    empresa_id: int,
+    nome: str = Form(...),
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    empresa = db.query(Company).filter(Company.id == empresa_id).first()
+    if empresa and nome.strip():
+        # Check name uniqueness (excluding self)
+        dup = db.query(Company).filter(
+            Company.name == nome.strip(), Company.id != empresa_id
+        ).first()
+        if not dup:
+            empresa.name = nome.strip()
+            db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/usuarios/{user_id}/status")
+def mudar_status_usuario(
+    user_id: int,
+    novo_status: str = Form(...),
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user and user.role != "superadmin" and novo_status in ("pending", "active", "blocked"):
+        user.status = novo_status
+        user.is_active = novo_status == "active"
         db.commit()
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -383,7 +624,7 @@ def impersonar_usuario(
     actual_user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
-    target = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    target = db.query(User).filter(User.id == user_id, User.status == "active").first()
     if not target or target.role == "superadmin":
         return RedirectResponse(url="/admin", status_code=303)
     request.session["impersonating_user_id"] = target.id
@@ -430,7 +671,6 @@ def criar_usuario_empresa(
     if current_user.role == "superadmin":
         return RedirectResponse(url="/admin", status_code=303)
 
-    # Only allow creating avaliador or admin (no superadmin via company panel)
     if perfil not in ("avaliador", "admin"):
         perfil = "avaliador"
 
@@ -441,6 +681,7 @@ def criar_usuario_empresa(
             name=nome.strip(),
             password_hash=hash_password(senha),
             role=perfil,
+            status="active",
             is_active=True,
         )
         db.add(new_user)
@@ -462,6 +703,7 @@ def desativar_usuario(
         .first()
     )
     if target and target.id != current_user.id:
+        target.status = "blocked"
         target.is_active = False
         db.commit()
     return RedirectResponse(url="/empresa/usuarios", status_code=303)
