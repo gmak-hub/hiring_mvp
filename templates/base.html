@@ -7,9 +7,51 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+
+  {% if is_impersonating and user %}
+  <div class="impersonation-banner">
+    <span>Você está visualizando como <strong>{{ user.name }}</strong> ({{ user.company.name if user.company else '—' }})</span>
+    <form method="post" action="/admin/parar-impersonar" class="inline-form">
+      <button type="submit" class="btn btn-sm btn-ghost">Sair da visualização</button>
+    </form>
+  </div>
+  {% endif %}
+
   <nav class="navbar">
     <a href="/" class="nav-brand">HiringEval</a>
+
+    {% if user %}
+    <div class="nav-right">
+      {% if user.role == 'superadmin' and not is_impersonating %}
+        <a href="/admin" class="btn btn-sm btn-ghost">⚙ Admin</a>
+      {% endif %}
+      {% if user.role in ('admin', 'superadmin') and not is_impersonating %}
+        {% if user.role == 'admin' %}
+          <a href="/empresa/usuarios" class="btn btn-sm btn-ghost">Usuários</a>
+        {% endif %}
+      {% endif %}
+
+      <div class="nav-user-info">
+        <span class="nav-user-name">{{ user.name }}</span>
+        {% if user.company %}
+          <span class="nav-divider">·</span>
+          <span class="nav-company">{{ user.company.name }}</span>
+        {% endif %}
+        <span class="nav-divider">·</span>
+        {% if user.role == 'superadmin' %}
+          <span class="badge badge-purple">Super Admin</span>
+        {% elif user.role == 'admin' %}
+          <span class="badge badge-indigo">Admin</span>
+        {% else %}
+          <span class="badge badge-gray">Avaliador</span>
+        {% endif %}
+      </div>
+
+      <a href="/logout" class="btn btn-sm btn-ghost">Sair</a>
+    </div>
+    {% endif %}
   </nav>
+
   <main class="container">
     {% block content %}{% endblock %}
   </main>

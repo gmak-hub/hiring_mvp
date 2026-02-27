@@ -6,9 +6,17 @@
 
 <div class="page-header">
   <h1>{{ job.name }}</h1>
-  {% if job.scorecard %}
-    <a href="/cargos/{{ job.id }}/candidatos/novo" class="btn btn-primary">+ Adicionar Candidato</a>
-  {% endif %}
+  <div style="display:flex; gap:0.625rem; align-items:center; flex-wrap:wrap;">
+    {% if job.scorecard %}
+      <a href="/cargos/{{ job.id }}/candidatos/novo" class="btn btn-primary">+ Adicionar Candidato</a>
+    {% endif %}
+    {% if user.role in ('admin', 'superadmin') %}
+      <form method="post" action="/cargos/{{ job.id }}/excluir" class="inline-form"
+            onsubmit="return confirm('Excluir o cargo {{ job.name }}?')">
+        <button type="submit" class="btn btn-sm btn-danger">Excluir Cargo</button>
+      </form>
+    {% endif %}
+  </div>
 </div>
 
 {% if msg == 'scorecard_gerado' %}
@@ -77,7 +85,7 @@
 {% if job.scorecard %}
 
   <!-- Tabela comparativa -->
-  {% if job.candidates %}
+  {% if active_candidates %}
   <div class="section">
     <div class="section-header">
       <span class="section-title">Comparação de Candidatos</span>
@@ -97,7 +105,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for candidato in job.candidates | sort(attribute='final_score', reverse=True) %}
+          {% for candidato in active_candidates | sort(attribute='final_score', reverse=True) %}
           <tr>
             <td>
               <a href="/cargos/{{ job.id }}/candidatos/{{ candidato.id }}" class="candidate-link">
@@ -136,8 +144,8 @@
       <a href="/cargos/{{ job.id }}/candidatos/novo" class="btn btn-sm btn-ghost">+ Adicionar</a>
     </div>
 
-    {% if job.candidates %}
-      {% for candidato in job.candidates | sort(attribute='final_score', reverse=True) %}
+    {% if active_candidates %}
+      {% for candidato in active_candidates | sort(attribute='final_score', reverse=True) %}
       <div class="candidate-row">
         <div class="candidate-row-info">
           <a href="/cargos/{{ job.id }}/candidatos/{{ candidato.id }}" class="candidate-link">
@@ -158,6 +166,13 @@
             {% endif %}
           {% endif %}
           <a href="/cargos/{{ job.id }}/candidatos/{{ candidato.id }}" class="btn btn-sm btn-ghost">Ver →</a>
+          {% if user.role in ('admin', 'superadmin') %}
+            <form method="post" action="/cargos/{{ job.id }}/candidatos/{{ candidato.id }}/excluir"
+                  class="inline-form"
+                  onsubmit="return confirm('Remover candidato {{ candidato.name }}?')">
+              <button type="submit" class="btn btn-sm btn-danger">Remover</button>
+            </form>
+          {% endif %}
         </div>
       </div>
       {% endfor %}

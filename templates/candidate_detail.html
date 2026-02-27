@@ -9,19 +9,28 @@
     <h1>{{ candidate.name }}</h1>
     <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">{{ job.name }}</p>
   </div>
-  {% if candidate.final_score is not none %}
-    {% set fs = candidate.final_score %}
-    <div class="final-score-display">
-      <span class="final-score-number
-        {% if fs >= 85 %}score-great
-        {% elif fs >= 70 %}score-good
-        {% elif fs >= 55 %}score-ok
-        {% elif fs >= 40 %}score-mid
-        {% else %}score-low{% endif %}
-      ">{{ fs | round(1) }}</span>
-      <span class="final-score-label">/ 100</span>
-    </div>
-  {% endif %}
+  <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+    {% if candidate.final_score is not none %}
+      {% set fs = candidate.final_score %}
+      <div class="final-score-display">
+        <span class="final-score-number
+          {% if fs >= 85 %}score-great
+          {% elif fs >= 70 %}score-good
+          {% elif fs >= 55 %}score-ok
+          {% elif fs >= 40 %}score-mid
+          {% else %}score-low{% endif %}
+        ">{{ fs | round(1) }}</span>
+        <span class="final-score-label">/ 100</span>
+      </div>
+    {% endif %}
+    {% if user.role in ('admin', 'superadmin') %}
+      <form method="post" action="/cargos/{{ job.id }}/candidatos/{{ candidate.id }}/excluir"
+            class="inline-form"
+            onsubmit="return confirm('Remover o candidato {{ candidate.name }} desta vaga?')">
+        <button type="submit" class="btn btn-sm btn-danger">Remover Candidato</button>
+      </form>
+    {% endif %}
+  </div>
 </div>
 
 {% if candidate.evaluation %}

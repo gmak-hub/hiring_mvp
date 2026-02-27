@@ -5,3 +5,4 @@ jinja2
 anthropic
 python-dotenv
 python-multipart
+passlib[bcrypt]

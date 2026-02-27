@@ -9,18 +9,27 @@
 
 {% if jobs %}
   {% for cargo in jobs %}
+  {% set active_count = cargo.candidates | selectattr('is_deleted', 'equalto', false) | list | length %}
   <div class="card">
     <div class="card-header">
       <h2><a href="/cargos/{{ cargo.id }}" style="color: var(--text);">{{ cargo.name }}</a></h2>
-      {% if cargo.scorecard %}
-        <span class="badge badge-green">Scorecard gerado</span>
-      {% else %}
-        <span class="badge badge-gray">Sem scorecard</span>
-      {% endif %}
+      <div style="display:flex; gap:0.5rem; align-items:center;">
+        {% if cargo.scorecard %}
+          <span class="badge badge-green">Scorecard gerado</span>
+        {% else %}
+          <span class="badge badge-gray">Sem scorecard</span>
+        {% endif %}
+        {% if user.role in ('admin', 'superadmin') %}
+          <form method="post" action="/cargos/{{ cargo.id }}/excluir" class="inline-form"
+                onsubmit="return confirm('Excluir o cargo {{ cargo.name }}? Esta ação pode ser revertida pelo administrador do sistema.')">
+            <button type="submit" class="btn btn-sm btn-danger">Excluir</button>
+          </form>
+        {% endif %}
+      </div>
     </div>
     <p class="description-preview">{{ cargo.description }}</p>
     <div class="card-footer">
-      <span>{{ cargo.candidates | length }} candidato(s)</span>
+      <span>{{ active_count }} candidato(s)</span>
       <a href="/cargos/{{ cargo.id }}" class="btn btn-sm btn-ghost">Ver →</a>
     </div>
   </div>
