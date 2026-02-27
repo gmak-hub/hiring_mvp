@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — HiringEval</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-box">
+      <div class="login-logo">HiringEval</div>
+      <p class="login-subtitle">Entre com suas credenciais para continuar</p>
+
+      {% if error %}
+        <div class="login-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/login">
+        <div class="form-group">
+          <label for="empresa">Empresa</label>
+          <input
+            type="text"
+            id="empresa"
+            name="empresa"
+            placeholder="Nome da empresa"
+            autocomplete="organization"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="usuario">Usuário</label>
+          <input
+            type="text"
+            id="usuario"
+            name="usuario"
+            placeholder="Nome de usuário"
+            required
+            autocomplete="username"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="senha">Senha</label>
+          <input
+            type="password"
+            id="senha"
+            name="senha"
+            placeholder="••••••••"
+            required
+            autocomplete="current-password"
+          >
+        </div>
+
+        <div style="margin-top: 1.5rem;">
+          <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+            Entrar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Usuários — {{ user.company.name }} — HiringEval{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Usuários</h1>
+    <p class="text-muted" style="margin-top:0.25rem; font-size:0.875rem;">{{ user.company.name }}</p>
+  </div>
+  <a href="/" class="btn btn-ghost btn-sm">← Voltar aos Cargos</a>
+</div>
+
+<!-- Convidar novo usuário -->
+<div class="section" style="max-width: 560px;">
+  <div class="section-header">
+    <span class="section-title">Adicionar Usuário</span>
+  </div>
+  <form method="post" action="/empresa/usuarios">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.875rem;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="nome">Nome completo</label>
+        <input type="text" id="nome" name="nome" placeholder="Ex: Maria Silva" required>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="usuario">Usuário (login)</label>
+        <input type="text" id="usuario" name="usuario" placeholder="Ex: maria.silva" required>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="senha">Senha</label>
+        <input type="password" id="senha" name="senha" placeholder="••••••••" required>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="perfil">Perfil</label>
+        <select id="perfil" name="perfil" style="
+          width:100%; padding:0.5rem 0.75rem;
+          border:1px solid var(--border); border-radius:6px;
+          font-size:0.9375rem; font-family:inherit; color:var(--text);
+          background:var(--surface);
+        ">
+          <option value="avaliador">Avaliador</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions" style="margin-top:1rem;">
+      <button type="submit" class="btn btn-primary">Adicionar Usuário</button>
+    </div>
+  </form>
+</div>
+
+<!-- Lista de usuários -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">Usuários da empresa ({{ usuarios | length }})</span>
+  </div>
+
+  {% if usuarios %}
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>Usuário</th>
+          <th>Perfil</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+        <tr>
+          <td style="font-weight:600;">{{ u.name }}</td>
+          <td class="text-muted" style="font-size:0.8125rem;">{{ u.username }}</td>
+          <td>
+            {% if u.role == 'admin' %}
+              <span class="badge badge-indigo">Admin</span>
+            {% else %}
+              <span class="badge badge-gray">Avaliador</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.is_active %}
+              <span class="badge badge-green">Ativo</span>
+            {% else %}
+              <span class="badge badge-red">Inativo</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="action-cell">
+              {% if u.is_active and u.id != user.id %}
+                <form method="post" action="/empresa/usuarios/{{ u.id }}/desativar"
+                      class="inline-form"
+                      onsubmit="return confirm('Desativar {{ u.name }}? O usuário perderá acesso ao sistema.')">
+                  <button type="submit" class="btn btn-sm btn-danger">Desativar</button>
+                </form>
+              {% elif u.id == user.id %}
+                <span class="text-muted" style="font-size:0.8rem;">Você</span>
+              {% else %}
+                <span class="text-muted" style="font-size:0.8rem;">Inativo</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="empty-state">
+      <p>Nenhum usuário cadastrado ainda.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

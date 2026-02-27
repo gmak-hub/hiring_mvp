@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Painel Admin — HiringEval{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Painel Super Admin</h1>
+</div>
+
+<!-- Nova empresa -->
+<div class="section" style="max-width: 480px;">
+  <div class="section-header">
+    <span class="section-title">Nova Empresa</span>
+  </div>
+  <form method="post" action="/admin/empresas" style="display:flex; gap:0.75rem; align-items:flex-end;">
+    <div class="form-group" style="flex:1; margin-bottom:0;">
+      <label for="nome_empresa">Nome da empresa</label>
+      <input type="text" id="nome_empresa" name="nome" placeholder="Ex: Acme Corp" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Criar</button>
+  </form>
+</div>
+
+<div class="admin-grid">
+
+  <!-- Empresas -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Empresas ({{ empresas | length }})</span>
+    </div>
+    {% if empresas %}
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Status</th>
+            <th>Usuários</th>
+            <th>Criada em</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for empresa in empresas %}
+          <tr>
+            <td style="font-weight:600;">{{ empresa.name }}</td>
+            <td>
+              {% if empresa.is_active %}
+                <span class="badge badge-green">Ativa</span>
+              {% else %}
+                <span class="badge badge-gray">Inativa</span>
+              {% endif %}
+            </td>
+            <td>{{ empresa.users | length }}</td>
+            <td class="text-muted" style="font-size:0.8125rem;">
+              {{ empresa.created_at.strftime('%d/%m/%Y') if empresa.created_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="text-muted" style="font-size:0.875rem;">Nenhuma empresa cadastrada.</p>
+    {% endif %}
+  </div>
+
+  <!-- Todos os usuários -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Usuários ({{ usuarios | length }})</span>
+    </div>
+    {% if usuarios %}
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Usuário</th>
+            <th>Empresa</th>
+            <th>Perfil</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in usuarios %}
+          <tr>
+            <td style="font-weight:600; white-space:nowrap;">{{ u.name }}</td>
+            <td class="text-muted" style="font-size:0.8125rem;">{{ u.username }}</td>
+            <td style="font-size:0.8125rem;">{{ u.company.name if u.company else '—' }}</td>
+            <td>
+              {% if u.role == 'superadmin' %}
+                <span class="badge badge-purple">Super Admin</span>
+              {% elif u.role == 'admin' %}
+                <span class="badge badge-indigo">Admin</span>
+              {% else %}
+                <span class="badge badge-gray">Avaliador</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.is_active %}
+                <span class="badge badge-green">Ativo</span>
+              {% else %}
+                <span class="badge badge-red">Inativo</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="action-cell">
+                {% if u.role != 'superadmin' and u.is_active %}
+                  <form method="post" action="/admin/impersonar/{{ u.id }}" class="inline-form">
+                    <button type="submit" class="btn btn-sm btn-ghost">Entrar como</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="text-muted" style="font-size:0.875rem;">Nenhum usuário cadastrado.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
