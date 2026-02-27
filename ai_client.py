@@ -1,0 +1,172 @@
+import os
+import json
+from anthropic import Anthropic
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+MODELO = "claude-sonnet-4-6"
+
+# Mapeamento de valores de confiança para forma canônica em PT-BR
+MAPA_CONFIANCA = {
+    "baixo": "Baixo", "low": "Baixo",
+    "médio": "Médio", "medio": "Médio", "medium": "Médio",
+    "alto": "Alto", "high": "Alto",
+}
+
+
+def _extrair_json(texto: str) -> str:
+    """Remove blocos de markdown e retorna apenas o JSON puro."""
+    texto = texto.strip()
+    if texto.startswith("```"):
+        linhas = texto.split("\n")
+        fim = next(
+            (i for i in range(len(linhas) - 1, 0, -1) if linhas[i].strip() == "```"),
+            len(linhas),
+        )
+        conteudo = linhas[1:fim]
+        if conteudo and conteudo[0].strip().lower() in ("json", ""):
+            conteudo = conteudo[1:]
+        return "\n".join(conteudo).strip()
+    return texto
+
+
+def _numerar_linhas(transcricao: str) -> str:
+    """Adiciona número de linha a cada linha da transcrição."""
+    linhas = transcricao.strip().split("\n")
+    return "\n".join(f"[{i + 1}] {linha}" for i, linha in enumerate(linhas))
+
+
+def gerar_scorecard(nome_cargo: str, descricao_vaga: str) -> dict:
+    prompt = f"""Você é um consultor especialista em recrutamento e seleção. Gere um scorecard de avaliação rigoroso para o cargo descrito abaixo.
+
+Cargo: {nome_cargo}
+Descrição da Vaga:
+{descricao_vaga}
+
+REGRAS OBRIGATÓRIAS:
+1. Retorne EXATAMENTE 5 critérios — nem mais, nem menos.
+2. O nome de cada critério deve ser EXATAMENTE UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução", "Comunicação").
+3. Os pesos devem ser números inteiros que somem EXATAMENTE 100.
+4. As descrições de rubrica devem ser ESPECÍFICAS e COMPORTAMENTAIS para ESTE cargo. Sem frases genéricas.
+5. Cada nível deve descrever um comportamento observável E justificar por que corresponde àquela nota.
+
+Escala da rubrica:
+1 = Ausência clara do comportamento exigido
+2 = Demonstração fraca ou inconsistente
+3 = Competência adequada / nível base
+4 = Demonstração forte e consistente
+5 = Demonstração excepcional, escalável e estratégica
+
+EXEMPLO RUIM: "Demonstra boa liderança."
+EXEMPLO BOM para Liderança/5: "Estruturou e escalou equipe com múltiplos níveis de reporte; implementou sistema de metas (OKRs ou equivalente); tomou decisões de contratação e desligamento com base em critérios objetivos; há evidências de outros gestores replicando seu modelo de gestão."
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "criterios": [
+    {{
+      "nome": "UmaPalavra",
+      "peso": 20,
+      "rubrica": {{
+        "1": "Descrição observável específica para este cargo — nível 1",
+        "2": "Descrição observável específica para este cargo — nível 2",
+        "3": "Descrição observável específica para este cargo — nível 3",
+        "4": "Descrição observável específica para este cargo — nível 4",
+        "5": "Descrição observável específica para este cargo — nível 5"
+      }}
+    }}
+  ]
+}}"""
+
+    resposta = client.messages.create(
+        model=MODELO,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bruto = _extrair_json(resposta.content[0].text)
+    dados = json.loads(bruto)
+
+    criterios = dados.get("criterios", [])
+    if len(criterios) != 5:
+        raise ValueError(f"Esperado 5 critérios, recebido {len(criterios)}")
+
+    total = sum(c["peso"] for c in criterios)
+    if total != 100:
+        for c in criterios:
+            c["peso"] = round(c["peso"] * 100 / total)
+        diferenca = 100 - sum(c["peso"] for c in criterios)
+        criterios[0]["peso"] += diferenca
+
+    return dados
+
+
+def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) -> dict:
+    numerada = _numerar_linhas(transcricao)
+
+    blocos_criterio = []
+    for c in scorecard["criterios"]:
+        rubrica = "\n".join(f"  {k}: {v}" for k, v in sorted(c["rubrica"].items()))
+        blocos_criterio.append(
+            f"CRITÉRIO: {c['nome']} (Peso: {c['peso']}%)\nRubrica:\n{rubrica}"
+        )
+    texto_criterios = "\n\n".join(blocos_criterio)
+
+    prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
+
+Candidato: {nome_candidato}
+
+=== SCORECARD ===
+{texto_criterios}
+
+=== TRANSCRIÇÃO (com número de linhas) ===
+{numerada}
+
+Para CADA um dos 5 critérios acima, produza uma avaliação completa.
+
+REGRAS:
+- Atribua nota 1–5 com base ESTRITAMENTE na definição da rubrica.
+- contribuicao = (nota × peso) / 5  [máximo por critério = peso; máximo total = 100]
+- confianca: "Baixo" se nenhuma ou mínima evidência; "Médio" se evidência parcial; "Alto" se evidência clara e consistente.
+- evidencias: lista de CITAÇÕES DIRETAS da transcrição com número de linha, no formato: "[LINHA] 'citação exata'"
+- lacunas: declare explicitamente o que NÃO foi demonstrado ou qual evidência estava ausente ou insuficiente.
+- Se NÃO houver evidência relevante para um critério: nota=2, confianca="Baixo", evidencias=[], lacunas="[descreva o que era esperado, mas não foi encontrado na transcrição]"
+- NUNCA invente evidências. Cite apenas linhas que existem na transcrição.
+- nota_final = soma de todos os valores de contribuicao (faixa teórica: 20–100)
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "avaliacoes": [
+    {{
+      "criterio": "NomeDoCriterio",
+      "nota": 3,
+      "peso": 20,
+      "contribuicao": 12.0,
+      "confianca": "Médio",
+      "evidencias": ["[12] 'citação exata da linha 12'"],
+      "lacunas": "Não demonstrou X nem Y"
+    }}
+  ],
+  "nota_final": 64.0
+}}"""
+
+    resposta = client.messages.create(
+        model=MODELO,
+        max_tokens=6144,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bruto = _extrair_json(resposta.content[0].text)
+    dados = json.loads(bruto)
+
+    # Normaliza confiança e recalcula contribuições ponderadas no servidor
+    for av in dados["avaliacoes"]:
+        val = av.get("confianca", "").lower().strip()
+        av["confianca"] = MAPA_CONFIANCA.get(val, "Baixo")
+        av["contribuicao"] = round((av["nota"] * av["peso"]) / 5, 1)
+
+    nota_final = sum(av["contribuicao"] for av in dados["avaliacoes"])
+    dados["nota_final"] = round(nota_final, 1)
+
+    return dados

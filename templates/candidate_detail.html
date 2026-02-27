@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ candidate.name }} — {{ job.name }} — HiringEval{% endblock %}
+
+{% block content %}
+<a href="/cargos/{{ job.id }}" class="back-link">← {{ job.name }}</a>
+
+<div class="page-header">
+  <div>
+    <h1>{{ candidate.name }}</h1>
+    <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">{{ job.name }}</p>
+  </div>
+  {% if candidate.final_score is not none %}
+    {% set fs = candidate.final_score %}
+    <div class="final-score-display">
+      <span class="final-score-number
+        {% if fs >= 85 %}score-great
+        {% elif fs >= 70 %}score-good
+        {% elif fs >= 55 %}score-ok
+        {% elif fs >= 40 %}score-mid
+        {% else %}score-low{% endif %}
+      ">{{ fs | round(1) }}</span>
+      <span class="final-score-label">/ 100</span>
+    </div>
+  {% endif %}
+</div>
+
+{% if candidate.evaluation %}
+
+  <!-- Tabela resumo -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Resumo da Avaliação</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Critério</th>
+            <th>Peso</th>
+            <th class="th-center">Nota</th>
+            <th class="th-center">Contribuição</th>
+            <th class="th-center">Confiança</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for av in candidate.evaluation.avaliacoes %}
+          <tr>
+            <td class="criterion-name">{{ av.criterio }}</td>
+            <td><span class="weight-pill">{{ av.peso }}%</span></td>
+            <td class="td-center"><span class="score score-{{ av.nota }}">{{ av.nota }}</span></td>
+            <td class="td-center td-contribution">{{ av.contribuicao | round(1) }}</td>
+            <td class="td-center">
+              <span class="confidence confidence-{% if av.confianca == 'Alto' %}alto{% elif av.confianca == 'Médio' %}medio{% else %}baixo{% endif %}">{{ av.confianca }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+          <tr class="total-row">
+            <td colspan="3"><strong>Nota Final</strong></td>
+            <td class="td-center td-contribution"><strong>{{ candidate.final_score | round(1) }}</strong></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Detalhamento por critério -->
+  <div class="section-title" style="margin-bottom: 1rem;">Detalhamento por Critério</div>
+
+  {% for av in candidate.evaluation.avaliacoes %}
+  <div class="criteria-block">
+    <div class="criteria-header">
+      <span class="criteria-name">{{ av.criterio }}</span>
+      <div class="criteria-meta">
+        <span class="weight-pill">{{ av.peso }}%</span>
+        <span class="score score-{{ av.nota }}">{{ av.nota }}</span>
+        <span class="confidence confidence-{% if av.confianca == 'Alto' %}alto{% elif av.confianca == 'Médio' %}medio{% else %}baixo{% endif %}">{{ av.confianca }}</span>
+        <span class="contribution-badge">+{{ av.contribuicao | round(1) }} pts</span>
+      </div>
+    </div>
+    <div class="criteria-body">
+
+      {% if av.evidencias %}
+        <div class="evidence-label">Evidências</div>
+        <ul class="evidence-list">
+          {% for ev in av.evidencias %}
+          <li class="evidence-item">{{ ev }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="no-evidence">Nenhuma evidência direta encontrada na transcrição.</p>
+      {% endif %}
+
+      {% if av.lacunas %}
+        <div style="margin-top: 0.875rem;">
+          <div class="gaps-label">Lacunas</div>
+          <div class="gaps-block">{{ av.lacunas }}</div>
+        </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endfor %}
+
+{% else %}
+  <div class="empty-state">
+    <p>Avaliação não disponível para este candidato.</p>
+  </div>
+{% endif %}
+{% endblock %}

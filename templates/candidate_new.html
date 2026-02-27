@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Novo Candidato — {{ job.name }} — HiringEval{% endblock %}
+
+{% block content %}
+<a href="/cargos/{{ job.id }}" class="back-link">← {{ job.name }}</a>
+
+<div class="page-header">
+  <h1>Adicionar Candidato</h1>
+</div>
+
+<form method="post" action="/cargos/{{ job.id }}/candidatos" class="form" id="formulario-candidato">
+  <div class="form-group">
+    <label for="name">Nome do Candidato</label>
+    <input type="text" id="name" name="name" required placeholder="Nome completo">
+  </div>
+  <div class="form-group">
+    <label for="transcript">
+      Transcrição da Entrevista
+      <span class="label-hint">Cole o texto completo. Marcações de tempo são opcionais — o sistema numerará as linhas automaticamente.</span>
+    </label>
+    <textarea id="transcript" name="transcript" rows="22" required
+      placeholder="Entrevistador: Me conta sobre sua experiência gerenciando equipes de engenharia...&#10;&#10;Candidato: Claro. Nos últimos 3 anos fui líder técnico de uma equipe de 8 pessoas...&#10;&#10;Entrevistador: Como você lidou com um membro de baixo desempenho?&#10;&#10;Candidato: ..."></textarea>
+  </div>
+  <div class="form-actions">
+    <a href="/cargos/{{ job.id }}" class="btn btn-ghost">Cancelar</a>
+    <button type="submit" class="btn btn-primary" id="btn-avaliar">Avaliar Candidato</button>
+  </div>
+  <p class="loading-msg" id="avaliando">Avaliando com IA... pode levar até 30 segundos.</p>
+</form>
+
+<script>
+document.getElementById('formulario-candidato').addEventListener('submit', function () {
+  const btn = document.getElementById('btn-avaliar');
+  const avaliando = document.getElementById('avaliando');
+  btn.disabled = true;
+  btn.textContent = 'Avaliando...';
+  avaliando.style.display = 'block';
+});
+</script>
+{% endblock %}

@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}{{ job.name }} — HiringEval{% endblock %}
+
+{% block content %}
+<a href="/" class="back-link">← Cargos</a>
+
+<div class="page-header">
+  <h1>{{ job.name }}</h1>
+  {% if job.scorecard %}
+    <a href="/cargos/{{ job.id }}/candidatos/novo" class="btn btn-primary">+ Adicionar Candidato</a>
+  {% endif %}
+</div>
+
+{% if msg == 'scorecard_gerado' %}
+  <div class="msg msg-success">✓ Scorecard gerado com sucesso.</div>
+{% elif msg == 'erro' %}
+  <div class="msg msg-error">Erro ao gerar scorecard. Verifique a descrição da vaga e tente novamente.</div>
+{% elif msg == 'erro_avaliacao' %}
+  <div class="msg msg-error">Erro ao avaliar candidato. Tente novamente.</div>
+{% endif %}
+
+<!-- Descrição da Vaga -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">Descrição da Vaga</span>
+    <button class="btn-link" id="desc-toggle" onclick="toggleDesc()">Ver mais</button>
+  </div>
+  <p class="description-text truncated" id="desc-text">{{ job.description }}</p>
+</div>
+
+<!-- Scorecard de Avaliação -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">Scorecard</span>
+    {% if not job.scorecard %}
+      <form method="post" action="/cargos/{{ job.id }}/gerar-scorecard" style="margin:0;" id="scorecard-form">
+        <button type="submit" class="btn btn-primary" id="gen-btn">Gerar Scorecard com IA</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if not job.scorecard %}
+    <p class="text-muted">Nenhum scorecard gerado. Clique em "Gerar Scorecard com IA" para criar os critérios de avaliação a partir da descrição da vaga.</p>
+    <p class="loading-msg" id="gen-loading">Aguarde, a geração pode levar até 30 segundos...</p>
+  {% else %}
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Critério</th>
+            <th>Peso</th>
+            <th>1 — Ausente</th>
+            <th>2 — Fraco</th>
+            <th>3 — Adequado</th>
+            <th>4 — Forte</th>
+            <th>5 — Excepcional</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in job.scorecard.criterios %}
+          <tr>
+            <td class="criterion-name">{{ c.nome }}</td>
+            <td><span class="weight-pill">{{ c.peso }}%</span></td>
+            <td class="td-rubric">{{ c.rubrica["1"] }}</td>
+            <td class="td-rubric">{{ c.rubrica["2"] }}</td>
+            <td class="td-rubric">{{ c.rubrica["3"] }}</td>
+            <td class="td-rubric">{{ c.rubrica["4"] }}</td>
+            <td class="td-rubric">{{ c.rubrica["5"] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+
+{% if job.scorecard %}
+
+  <!-- Tabela comparativa -->
+  {% if job.candidates %}
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Comparação de Candidatos</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Candidato</th>
+            {% for c in job.scorecard.criterios %}
+            <th class="th-center">
+              {{ c.nome }}<br>
+              <span class="th-weight">{{ c.peso }}%</span>
+            </th>
+            {% endfor %}
+            <th class="th-center">Nota Final</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for candidato in job.candidates | sort(attribute='final_score', reverse=True) %}
+          <tr>
+            <td>
+              <a href="/cargos/{{ job.id }}/candidatos/{{ candidato.id }}" class="candidate-link">
+                {{ candidato.name }}
+              </a>
+            </td>
+            {% if candidato.evaluation %}
+              {% for c in job.scorecard.criterios %}
+                {% set ns = namespace(val=0) %}
+                {% for av in candidato.evaluation.avaliacoes %}
+                  {% if av.criterio == c.nome %}{% set ns.val = av.nota %}{% endif %}
+                {% endfor %}
+                <td class="td-center">
+                  <span class="score score-{{ ns.val }}">{{ ns.val }}</span>
+                </td>
+              {% endfor %}
+              <td class="td-center td-final">{{ candidato.final_score | round(1) }}</td>
+            {% else %}
+              {% for c in job.scorecard.criterios %}
+                <td class="td-center text-muted">—</td>
+              {% endfor %}
+              <td class="td-center text-muted">—</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Lista de candidatos -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Candidatos</span>
+      <a href="/cargos/{{ job.id }}/candidatos/novo" class="btn btn-sm btn-ghost">+ Adicionar</a>
+    </div>
+
+    {% if job.candidates %}
+      {% for candidato in job.candidates | sort(attribute='final_score', reverse=True) %}
+      <div class="candidate-row">
+        <div class="candidate-row-info">
+          <a href="/cargos/{{ job.id }}/candidatos/{{ candidato.id }}" class="candidate-link">
+            {{ candidato.name }}
+          </a>
+        </div>
+        <div class="candidate-row-score">
+          {% if candidato.final_score is not none %}
+            {% set fs = candidato.final_score %}
+            {% if fs >= 85 %}
+              <span class="badge badge-green">{{ fs | round(1) }} / 100</span>
+            {% elif fs >= 70 %}
+              <span class="badge badge-blue">{{ fs | round(1) }} / 100</span>
+            {% elif fs >= 55 %}
+              <span class="badge badge-yellow">{{ fs | round(1) }} / 100</span>
+            {% else %}
+              <span class="badge badge-red">{{ fs | round(1) }} / 100</span>
+            {% endif %}
+          {% endif %}
+          <a href="/cargos/{{ job.id }}/candidatos/{{ candidato.id }}" class="btn btn-sm btn-ghost">Ver →</a>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <p>Nenhum candidato avaliado ainda.</p>
+        <a href="/cargos/{{ job.id }}/candidatos/novo" class="btn btn-primary">+ Adicionar Candidato</a>
+      </div>
+    {% endif %}
+  </div>
+
+{% endif %}
+
+<script>
+function toggleDesc() {
+  const el = document.getElementById('desc-text');
+  const btn = document.getElementById('desc-toggle');
+  if (el.classList.contains('truncated')) {
+    el.classList.remove('truncated');
+    btn.textContent = 'Ver menos';
+  } else {
+    el.classList.add('truncated');
+    btn.textContent = 'Ver mais';
+  }
+}
+
+const formularioScorecard = document.getElementById('scorecard-form');
+if (formularioScorecard) {
+  formularioScorecard.addEventListener('submit', function () {
+    const btn = document.getElementById('gen-btn');
+    const carregando = document.getElementById('gen-loading');
+    btn.disabled = true;
+    btn.textContent = 'Gerando...';
+    if (carregando) carregando.style.display = 'block';
+  });
+}
+</script>
+{% endblock %}
