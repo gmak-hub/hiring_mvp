@@ -25,6 +25,41 @@ MAPA_CONFIANCA = {
     "alto": "Alto", "high": "Alto",
 }
 
+# Palavras que indicam critério técnico/hard skill — proibidas no scorecard comportamental
+_PALAVRAS_TECNICAS = frozenset({
+    # Linguagens de programação
+    "python", "java", "javascript", "typescript", "ruby", "golang", "rust",
+    "php", "swift", "kotlin", "scala", "perl", "c++", "c#",
+    # Bancos de dados
+    "sql", "nosql", "mongodb", "postgresql", "mysql", "redis", "elasticsearch",
+    # BI / dados
+    "excel", "powerbi", "tableau", "looker", "databricks", "spark",
+    # CRM / ERP / plataformas
+    "salesforce", "hubspot", "pipedrive", "zendesk", "sap", "erp", "crm",
+    # Cloud e infra
+    "aws", "azure", "gcp", "cloud", "kubernetes", "docker", "terraform",
+    "linux", "unix",
+    # Frontend / backend / APIs
+    "react", "angular", "vue", "node", "django", "flask", "fastapi",
+    "api", "rest", "graphql", "microservices",
+    # Design / ferramentas
+    "figma", "photoshop", "illustrator", "autocad", "sketch",
+    "git", "jira", "confluence",
+    # Office técnico
+    "office", "powerpoint",
+    # Formação e certificações
+    "certificação", "certificado", "diploma", "graduação", "formação", "mba",
+    # Idiomas
+    "inglês", "espanhol", "francês", "alemão", "mandarim", "idioma", "bilíngue",
+    # Genéricas técnicas
+    "programação", "código", "software", "hardware", "técnico", "técnica",
+    "tecnologia", "ferramenta", "linguagem", "plataforma", "infra",
+    # ML / IA
+    "tensorflow", "pytorch", "nlp", "machine",
+    # Metodologias de engenharia
+    "devops", "scrum", "kanban",
+})
+
 
 # ── Custom exceptions ──────────────────────────────────────────────────────────
 
@@ -93,6 +128,21 @@ def _numerar_linhas(transcricao: str) -> str:
     return "\n".join(f"[{i + 1}] {linha}" for i, linha in enumerate(linhas))
 
 
+def _criterios_tecnicos(criterios: list) -> list[str]:
+    """
+    Returns the names of criteria whose name contains a technical/hard-skill word.
+    Used to validate that the scorecard is purely behavioral.
+    """
+    flagged = []
+    for c in criterios:
+        nome = c.get("nome", "").lower().strip()
+        for token in nome.split():
+            if token in _PALAVRAS_TECNICAS:
+                flagged.append(c["nome"])
+                break
+    return flagged
+
+
 def _chamar_api(prompt: str, max_tokens: int) -> str:
     """
     Call the Anthropic API and return the text of the first content block.
@@ -122,13 +172,38 @@ def _chamar_api(prompt: str, max_tokens: int) -> str:
 # ── Public functions ───────────────────────────────────────────────────────────
 
 def gerar_scorecard(nome_cargo: str, descricao_vaga: str) -> dict:
-    prompt = f"""Você é um consultor especialista em recrutamento e seleção. Gere um scorecard de avaliação rigoroso para o cargo descrito abaixo.
+    prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+Sua tarefa é criar um scorecard de entrevista baseado EXCLUSIVAMENTE em competências comportamentais, soft skills e fit cultural para o cargo abaixo.
 
 Cargo: {nome_cargo}
 Descrição da Vaga:
 {descricao_vaga}
 
-REGRAS OBRIGATÓRIAS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGRAS ABSOLUTAS — SIGA SEM EXCEÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROIBIDO incluir qualquer critério que envolva:
+✗ Hard skills técnicas (programação, linguagens de programação, ferramentas, plataformas)
+✗ Conhecimento de softwares ou sistemas (Excel, Python, SQL, Salesforce, SAP, Power BI, etc.)
+✗ Certificações, diplomas ou requisitos de formação acadêmica
+✗ Idiomas ou fluência linguística
+✗ Qualquer habilidade que se aprende em curso técnico, e não em interações humanas
+
+OBRIGATÓRIO incluir apenas critérios que avaliem:
+✓ Comportamentos observáveis em situações reais de trabalho
+✓ Soft skills: liderança, comunicação, resolução de conflitos, adaptabilidade, colaboração, etc.
+✓ Fit cultural e de valores com a empresa e o time
+✓ Mentalidade e forma de pensar (ex: orientação a resultados, pensamento estratégico, dono do negócio)
+✓ Dinâmicas interpessoais e de equipe
+
+SOBRE REQUISITOS TÉCNICOS NA DESCRIÇÃO DA VAGA:
+Se a vaga mencionar hard skills técnicas (ex: "deve conhecer Python", "experiência com Salesforce", "fluência em inglês"),
+IGNORE-OS completamente — esses são pré-requisitos de triagem e NÃO fazem parte da avaliação comportamental.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGRAS DE FORMATO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Retorne EXATAMENTE 5 critérios — nem mais, nem menos.
 2. O nome de cada critério deve ser EXATAMENTE UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução", "Comunicação").
 3. Os pesos devem ser números inteiros que somem EXATAMENTE 100.
@@ -142,7 +217,7 @@ Escala da rubrica:
 4 = Demonstração forte e consistente
 5 = Demonstração excepcional, escalável e estratégica
 
-EXEMPLO RUIM: "Demonstra boa liderança."
+EXEMPLO RUIM (PROIBIDO): "Domina Python e SQL." / "Possui certificação AWS." / "Fluente em inglês."
 EXEMPLO BOM para Liderança/5: "Estruturou e escalou equipe com múltiplos níveis de reporte; implementou sistema de metas (OKRs ou equivalente); tomou decisões de contratação e desligamento com base em critérios objetivos; há evidências de outros gestores replicando seu modelo de gestão."
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
@@ -162,20 +237,45 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
   ]
 }}"""
 
-    texto = _chamar_api(prompt, max_tokens=4096)
+    _MAX_TENTATIVAS = 2
+    ultimo_erro: Exception | None = None
+    dados: dict = {}
 
-    try:
-        bruto = _extrair_json(texto)
-        dados = json.loads(bruto)
-    except json.JSONDecodeError as e:
-        print(f"[AI PARSING ERROR] Resposta bruta do scorecard:\n{texto}")
-        raise AIParsingError(f"A IA retornou JSON inválido no scorecard: {e}") from e
+    for tentativa in range(1, _MAX_TENTATIVAS + 1):
+        texto = _chamar_api(prompt, max_tokens=4096)
 
-    criterios = dados.get("criterios", [])
-    if len(criterios) != 5:
-        raise AIParsingError(
-            f"Esperado 5 critérios, recebido {len(criterios)}. Tente novamente."
-        )
+        try:
+            bruto = _extrair_json(texto)
+            dados = json.loads(bruto)
+        except json.JSONDecodeError as e:
+            ultimo_erro = AIParsingError(f"A IA retornou JSON inválido no scorecard: {e}")
+            print(f"[AI PARSING ERROR] tentativa={tentativa} Resposta bruta:\n{texto}")
+            continue
+
+        criterios = dados.get("criterios", [])
+        if len(criterios) != 5:
+            ultimo_erro = AIParsingError(
+                f"Esperado 5 critérios, recebido {len(criterios)}."
+            )
+            continue
+
+        tecnicos = _criterios_tecnicos(criterios)
+        if tecnicos:
+            ultimo_erro = AIParsingError(
+                f"Scorecard contém critérios técnicos/hard-skill: {tecnicos}. "
+                "O scorecard deve avaliar somente competências comportamentais."
+            )
+            print(f"[SCORECARD VALIDAÇÃO] tentativa={tentativa} critérios técnicos detectados: {tecnicos}")
+            continue
+
+        # Passou em todas as validações
+        ultimo_erro = None
+        break
+
+    if ultimo_erro is not None:
+        raise ultimo_erro
+
+    criterios = dados["criterios"]
 
     # Normalize weights to sum to exactly 100
     total = sum(c["peso"] for c in criterios)
