@@ -1,7 +1,11 @@
+import copy
+import json
 import os
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
+
+from sqlalchemy.orm.attributes import flag_modified
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -396,6 +400,93 @@ def gerar_scorecard_rota(
         print(f"[SCORECARD ERROR] type={type(e).__name__} code={code} cargo_id={cargo_id}")
         print(traceback.format_exc())
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
+
+
+@app.post("/cargos/{cargo_id}/scorecard/regenerar-criterio")
+def regenerar_criterio_rota(
+    cargo_id: int,
+    criterio_idx: int = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cargo = _get_job(db, cargo_id, current_user)
+    if not cargo or not cargo.scorecard:
+        return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
+    try:
+        novo = ai_client.regenerar_criterio_ia(
+            cargo.scorecard, criterio_idx, cargo.name, cargo.description
+        )
+        novo_scorecard = copy.deepcopy(cargo.scorecard)
+        novo_scorecard["criterios"][criterio_idx] = novo
+        ai_client._normalizar_pesos_inplace(novo_scorecard["criterios"])
+        cargo.scorecard = novo_scorecard
+        flag_modified(cargo, "scorecard")
+        db.commit()
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg=criterio_regenerado", status_code=303)
+    except Exception as e:
+        code = _ai_msg_code(e)
+        print(f"[REGENERAR CRITERIO ERROR] type={type(e).__name__} code={code}")
+        print(traceback.format_exc())
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
+
+
+@app.post("/cargos/{cargo_id}/scorecard/editar-criterio")
+def editar_criterio_rota(
+    cargo_id: int,
+    criterio_idx: int = Form(...),
+    novo_nome: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cargo = _get_job(db, cargo_id, current_user)
+    if not cargo or not cargo.scorecard:
+        return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
+    try:
+        criterios = cargo.scorecard["criterios"]
+        outros = [c["nome"] for i, c in enumerate(criterios) if i != criterio_idx]
+        nova_rubrica = ai_client.gerar_rubrica_criterio(
+            novo_nome.strip(), cargo.name, cargo.description, outros
+        )
+        novo_scorecard = copy.deepcopy(cargo.scorecard)
+        novo_scorecard["criterios"][criterio_idx]["nome"] = novo_nome.strip()
+        novo_scorecard["criterios"][criterio_idx]["rubrica"] = nova_rubrica
+        cargo.scorecard = novo_scorecard
+        flag_modified(cargo, "scorecard")
+        db.commit()
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg=criterio_editado", status_code=303)
+    except Exception as e:
+        code = _ai_msg_code(e)
+        print(f"[EDITAR CRITERIO ERROR] type={type(e).__name__} code={code}")
+        print(traceback.format_exc())
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
+
+
+@app.post("/cargos/{cargo_id}/scorecard/atualizar-pesos")
+def atualizar_pesos_rota(
+    cargo_id: int,
+    pesos_json: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cargo = _get_job(db, cargo_id, current_user)
+    if not cargo or not cargo.scorecard:
+        return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
+    try:
+        lista_pesos = json.loads(pesos_json)
+        n = len(cargo.scorecard["criterios"])
+        if len(lista_pesos) != n:
+            return RedirectResponse(url=f"/cargos/{cargo_id}?msg=erro", status_code=303)
+        novo_scorecard = copy.deepcopy(cargo.scorecard)
+        for i, p in enumerate(lista_pesos):
+            novo_scorecard["criterios"][i]["peso"] = max(1, int(p))
+        ai_client._normalizar_pesos_inplace(novo_scorecard["criterios"])
+        cargo.scorecard = novo_scorecard
+        flag_modified(cargo, "scorecard")
+        db.commit()
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg=pesos_atualizados", status_code=303)
+    except Exception:
+        print(traceback.format_exc())
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg=erro", status_code=303)
 
 
 @app.post("/cargos/{cargo_id}/excluir")

@@ -323,6 +323,47 @@ table tr:hover td { background: #fafafa; }
   font-weight: 600;
 }
 
+/* ── Scorecard editing ───────────────────────────────── */
+.peso-input {
+  width: 3.5rem;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #eff6ff;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+.peso-input::-webkit-inner-spin-button,
+.peso-input::-webkit-outer-spin-button { opacity: 1; }
+.peso-input:focus { outline: 2px solid #3b82f6; border-color: #3b82f6; }
+
+.td-actions { vertical-align: middle; }
+
+.edit-row td {
+  background: #f8fafc;
+  border-top: 2px solid #e2e8f0;
+  padding: 0.625rem 1rem;
+}
+.edit-criterio-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.edit-criterio-form input[type=text] {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.edit-criterio-form input[type=text]:focus {
+  outline: 2px solid #3b82f6;
+  border-color: #3b82f6;
+}
+
 /* ── Confidence badges ──────────────────────────────── */
 .confidence {
   display: inline-block;

@@ -21,6 +21,12 @@
 
 {% if msg == 'scorecard_gerado' %}
   <div class="msg msg-success">✓ Scorecard gerado com sucesso.</div>
+{% elif msg == 'criterio_regenerado' %}
+  <div class="msg msg-success">✓ Critério regenerado com sucesso.</div>
+{% elif msg == 'criterio_editado' %}
+  <div class="msg msg-success">✓ Critério editado e descrição atualizada com sucesso.</div>
+{% elif msg == 'pesos_atualizados' %}
+  <div class="msg msg-success">✓ Pesos atualizados e normalizados para 100%.</div>
 {% elif msg == 'api_nao_configurada' %}
   <div class="msg msg-error">
     <strong>API não configurada.</strong> O arquivo <code>.env</code> não existe ou não contém <code>ANTHROPIC_API_KEY</code>.
@@ -69,7 +75,7 @@
     <p class="loading-msg" id="gen-loading">Aguarde, a geração pode levar até 30 segundos...</p>
   {% else %}
     <div class="table-container">
-      <table>
+      <table id="scorecard-table">
         <thead>
           <tr>
             <th>Critério</th>
@@ -79,23 +85,71 @@
             <th>3 — Adequado</th>
             <th>4 — Forte</th>
             <th>5 — Excepcional</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for c in job.scorecard.criterios %}
-          <tr>
+          <tr id="sc-row-{{ loop.index0 }}">
             <td class="criterion-name">{{ c.nome }}</td>
-            <td><span class="weight-pill">{{ c.peso }}%</span></td>
+            <td>
+              <input type="number" class="peso-input" id="peso-{{ loop.index0 }}"
+                     value="{{ c.peso }}" min="1" max="98"
+                     data-idx="{{ loop.index0 }}" aria-label="Peso {{ c.nome }}">%
+            </td>
             <td class="td-rubric">{{ c.rubrica["1"] }}</td>
             <td class="td-rubric">{{ c.rubrica["2"] }}</td>
             <td class="td-rubric">{{ c.rubrica["3"] }}</td>
             <td class="td-rubric">{{ c.rubrica["4"] }}</td>
             <td class="td-rubric">{{ c.rubrica["5"] }}</td>
+            <td class="td-actions" style="white-space:nowrap;">
+              <button type="button" class="btn btn-sm btn-ghost"
+                      onclick="toggleEditar({{ loop.index0 }})">✏ Editar</button>
+              <form method="post"
+                    action="/cargos/{{ job.id }}/scorecard/regenerar-criterio"
+                    class="inline-form" id="regen-form-{{ loop.index0 }}">
+                <input type="hidden" name="criterio_idx" value="{{ loop.index0 }}">
+                <button type="button" class="btn btn-sm btn-ghost"
+                        onclick="confirmarRegerar({{ loop.index0 }}, '{{ c.nome }}')">↺ Regenerar</button>
+              </form>
+            </td>
+          </tr>
+          <tr id="edit-row-{{ loop.index0 }}" class="edit-row" style="display:none;">
+            <td colspan="8">
+              <form method="post"
+                    action="/cargos/{{ job.id }}/scorecard/editar-criterio"
+                    class="edit-criterio-form"
+                    id="edit-form-{{ loop.index0 }}"
+                    onsubmit="return confirmarEditar({{ loop.index0 }})">
+                <input type="hidden" name="criterio_idx" value="{{ loop.index0 }}">
+                <label style="font-weight:600; margin-right:0.5rem;">Novo nome do critério:</label>
+                <input type="text" name="novo_nome" id="edit-nome-{{ loop.index0 }}"
+                       value="{{ c.nome }}" required maxlength="30"
+                       style="width:14rem; margin-right:0.5rem;">
+                <button type="submit" class="btn btn-sm btn-primary">Salvar</button>
+                <button type="button" class="btn btn-sm btn-ghost"
+                        onclick="toggleEditar({{ loop.index0 }})">Cancelar</button>
+                <span class="text-muted" style="margin-left:0.5rem; font-size:0.78rem;">
+                  (A IA irá regenerar a descrição automaticamente)
+                </span>
+              </form>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+
+    <!-- Salvar pesos -->
+    <div style="display:flex; align-items:center; gap:1rem; margin-top:0.75rem; flex-wrap:wrap;">
+      <span>Total dos pesos: <strong id="peso-total-display">{{ job.scorecard.criterios | sum(attribute='peso') }}%</strong></span>
+      <button type="button" class="btn btn-sm btn-primary" id="btn-salvar-pesos"
+              onclick="salvarPesos()">Salvar Pesos</button>
+    </div>
+    <form method="post" action="/cargos/{{ job.id }}/scorecard/atualizar-pesos"
+          id="pesos-form" style="display:none;">
+      <input type="hidden" name="pesos_json" id="pesos-json-input">
+    </form>
   {% endif %}
 </div>
 
@@ -204,6 +258,7 @@
 {% endif %}
 
 <script>
+// ── Descrição toggle ──────────────────────────────────────────────────────────
 function toggleDesc() {
   const el = document.getElementById('desc-text');
   const btn = document.getElementById('desc-toggle');
@@ -226,5 +281,129 @@ if (formularioScorecard) {
     if (carregando) carregando.style.display = 'block';
   });
 }
+
+// ── Scorecard editing ─────────────────────────────────────────────────────────
+
+function toggleEditar(idx) {
+  const row = document.getElementById('edit-row-' + idx);
+  if (!row) return;
+  const visible = row.style.display !== 'none';
+  row.style.display = visible ? 'none' : 'table-row';
+  if (!visible) {
+    const inp = document.getElementById('edit-nome-' + idx);
+    if (inp) inp.focus();
+  }
+}
+
+function confirmarEditar(idx) {
+  const inp = document.getElementById('edit-nome-' + idx);
+  const nome = inp ? inp.value.trim() : '';
+  if (!nome) return false;
+  return confirm(
+    'Salvar critério "' + nome + '"?\n' +
+    'A IA irá regenerar a descrição completa. Isso pode levar alguns segundos.'
+  );
+}
+
+function confirmarRegerar(idx, nomeCriterio) {
+  if (confirm('Regenerar o critério "' + nomeCriterio + '" com IA?\nO nome e a descrição serão substituídos por um novo critério gerado automaticamente.')) {
+    const form = document.getElementById('regen-form-' + idx);
+    if (form) {
+      const btn = form.querySelector('button');
+      if (btn) { btn.disabled = true; btn.textContent = 'Aguarde...'; }
+      form.submit();
+    }
+  }
+}
+
+// ── Peso inputs: auto-normalize to 100% ───────────────────────────────────────
+
+function _getPesoInputs() {
+  return Array.from(document.querySelectorAll('.peso-input'));
+}
+
+function _atualizarDisplay() {
+  const inputs = _getPesoInputs();
+  const total = inputs.reduce(function(s, inp) { return s + (parseInt(inp.value) || 0); }, 0);
+  const el = document.getElementById('peso-total-display');
+  if (el) {
+    el.textContent = total + '%';
+    el.style.color = total === 100 ? '' : '#c0392b';
+    el.style.fontWeight = total === 100 ? '600' : '700';
+  }
+  const btn = document.getElementById('btn-salvar-pesos');
+  if (btn) btn.disabled = total !== 100;
+}
+
+function distribuirPesos(alteredIdx) {
+  const inputs = _getPesoInputs();
+  if (inputs.length === 0) return;
+
+  let altVal = parseInt(inputs[alteredIdx].value) || 1;
+  altVal = Math.max(1, Math.min(100 - (inputs.length - 1), altVal));
+  inputs[alteredIdx].value = altVal;
+
+  const others = inputs.filter(function(_, i) { return i !== alteredIdx; });
+  const remaining = 100 - altVal;
+  const sumOthers = others.reduce(function(s, inp) { return s + (parseInt(inp.value) || 0); }, 0);
+
+  if (others.length === 0) {
+    _atualizarDisplay();
+    return;
+  }
+
+  if (sumOthers === 0) {
+    const base = Math.floor(remaining / others.length);
+    const extra = remaining - base * others.length;
+    others.forEach(function(inp, i) { inp.value = base + (i === 0 ? extra : 0); });
+  } else {
+    let distributed = 0;
+    others.forEach(function(inp, i) {
+      if (i < others.length - 1) {
+        const share = Math.round(remaining * ((parseInt(inp.value) || 0) / sumOthers));
+        inp.value = Math.max(1, share);
+        distributed += Math.max(1, share);
+      } else {
+        inp.value = Math.max(1, remaining - distributed);
+      }
+    });
+  }
+
+  _atualizarDisplay();
+}
+
+function salvarPesos() {
+  const inputs = _getPesoInputs();
+  const pesos = inputs.map(function(inp) { return parseInt(inp.value) || 0; });
+  const total = pesos.reduce(function(s, p) { return s + p; }, 0);
+  if (total !== 100) {
+    alert('Os pesos precisam somar exatamente 100%. Atualmente somam ' + total + '%.');
+    return;
+  }
+  const hidden = document.getElementById('pesos-json-input');
+  if (hidden) hidden.value = JSON.stringify(pesos);
+  document.getElementById('pesos-form').submit();
+}
+
+// Attach listeners after DOM ready
+document.addEventListener('DOMContentLoaded', function() {
+  _getPesoInputs().forEach(function(inp) {
+    inp.addEventListener('change', function() {
+      distribuirPesos(parseInt(this.dataset.idx));
+    });
+    inp.addEventListener('input', function() {
+      _atualizarDisplay();
+    });
+  });
+  _atualizarDisplay();
+
+  // Disable save-pesos button during form submissions that take time
+  document.querySelectorAll('.edit-criterio-form').forEach(function(form) {
+    form.addEventListener('submit', function() {
+      const btn = this.querySelector('button[type=submit]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Aguarde...'; }
+    });
+  });
+});
 </script>
 {% endblock %}

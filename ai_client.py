@@ -128,6 +128,16 @@ def _numerar_linhas(transcricao: str) -> str:
     return "\n".join(f"[{i + 1}] {linha}" for i, linha in enumerate(linhas))
 
 
+def _normalizar_pesos_inplace(criterios: list) -> None:
+    """Normalize criterion weights so they sum to exactly 100 (in-place)."""
+    total = sum(c["peso"] for c in criterios)
+    if total != 100:
+        for c in criterios:
+            c["peso"] = round(c["peso"] * 100 / total)
+        diferenca = 100 - sum(c["peso"] for c in criterios)
+        criterios[0]["peso"] += diferenca
+
+
 def _criterios_tecnicos(criterios: list) -> list[str]:
     """
     Returns the names of criteria whose name contains a technical/hard-skill word.
@@ -276,16 +286,136 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
         raise ultimo_erro
 
     criterios = dados["criterios"]
-
-    # Normalize weights to sum to exactly 100
-    total = sum(c["peso"] for c in criterios)
-    if total != 100:
-        for c in criterios:
-            c["peso"] = round(c["peso"] * 100 / total)
-        diferenca = 100 - sum(c["peso"] for c in criterios)
-        criterios[0]["peso"] += diferenca
-
+    _normalizar_pesos_inplace(criterios)
     return dados
+
+
+def regenerar_criterio_ia(scorecard: dict, indice: int, nome_cargo: str, descricao_vaga: str) -> dict:
+    """Regenerate a single criterion (by index) with AI, keeping the others intact.
+
+    Returns the new criterion dict with the same peso as the original.
+    Raises AIParsingError if validation fails after 2 attempts.
+    """
+    criterios_atuais = scorecard["criterios"]
+    outros_nomes = [c["nome"] for i, c in enumerate(criterios_atuais) if i != indice]
+    peso_atual = criterios_atuais[indice]["peso"]
+
+    prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+Você está atualizando um scorecard de entrevista. Precisa gerar UM NOVO critério comportamental para substituir um existente.
+
+Cargo: {nome_cargo}
+Descrição da Vaga:
+{descricao_vaga}
+
+Os outros 4 critérios já definidos no scorecard (NÃO repita estes):
+{', '.join(outros_nomes)}
+
+Gere EXATAMENTE 1 critério comportamental novo (diferente dos listados acima).
+
+REGRAS ABSOLUTAS:
+✗ PROIBIDO: hard skills técnicas, ferramentas, linguagens, certificações, idiomas
+✓ OBRIGATÓRIO: comportamento observável, soft skill, fit cultural
+
+FORMATO:
+- nome: UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução")
+- rubrica: 5 níveis descritivos e específicos para este cargo
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "nome": "UmaPalavra",
+  "rubrica": {{
+    "1": "Descrição observável específica nível 1",
+    "2": "Descrição observável específica nível 2",
+    "3": "Descrição observável específica nível 3",
+    "4": "Descrição observável específica nível 4",
+    "5": "Descrição observável específica nível 5"
+  }}
+}}"""
+
+    ultimo_erro: Exception | None = None
+
+    for tentativa in range(1, 3):
+        texto = _chamar_api(prompt, max_tokens=2048)
+
+        try:
+            bruto = _extrair_json(texto)
+            novo = json.loads(bruto)
+        except json.JSONDecodeError as e:
+            ultimo_erro = AIParsingError(f"JSON inválido ao regenerar critério: {e}")
+            continue
+
+        nome = novo.get("nome", "")
+        if _criterios_tecnicos([{"nome": nome}]):
+            ultimo_erro = AIParsingError(f"Critério gerado é técnico/hard-skill: {nome}")
+            continue
+
+        rubrica = novo.get("rubrica", {})
+        if not all(str(k) in rubrica for k in range(1, 6)):
+            ultimo_erro = AIParsingError("Rubrica incompleta ao regenerar critério")
+            continue
+
+        ultimo_erro = None
+        break
+
+    if ultimo_erro is not None:
+        raise ultimo_erro
+
+    novo["peso"] = peso_atual
+    return novo
+
+
+def gerar_rubrica_criterio(
+    nome_criterio: str,
+    nome_cargo: str,
+    descricao_vaga: str,
+    outros_criterios: list,
+) -> dict:
+    """Generate rubric levels 1-5 for a manually-named criterion.
+
+    Returns a rubric dict with keys "1" through "5".
+    Raises AIParsingError if the response is invalid.
+    """
+    outros_str = ", ".join(outros_criterios) if outros_criterios else "N/A"
+
+    prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+Gere a rubrica de avaliação para o critério comportamental abaixo, no contexto deste cargo.
+
+Cargo: {nome_cargo}
+Descrição da Vaga:
+{descricao_vaga}
+
+Critério a descrever: {nome_criterio}
+(Outros critérios do scorecard para contexto: {outros_str})
+
+REGRAS:
+- Descreva comportamentos observáveis e específicos para este cargo
+- Cada nível deve ser distinto e claro
+- Escala: 1=ausente, 2=fraco, 3=adequado, 4=forte, 5=excepcional
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "rubrica": {{
+    "1": "Descrição observável nível 1",
+    "2": "Descrição observável nível 2",
+    "3": "Descrição observável nível 3",
+    "4": "Descrição observável nível 4",
+    "5": "Descrição observável nível 5"
+  }}
+}}"""
+
+    texto = _chamar_api(prompt, max_tokens=2048)
+
+    try:
+        bruto = _extrair_json(texto)
+        dados = json.loads(bruto)
+    except json.JSONDecodeError as e:
+        raise AIParsingError(f"JSON inválido ao gerar rubrica do critério: {e}") from e
+
+    rubrica = dados.get("rubrica", {})
+    if not all(str(k) in rubrica for k in range(1, 6)):
+        raise AIParsingError("Rubrica incompleta retornada pela IA")
+
+    return rubrica
 
 
 def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) -> dict:
