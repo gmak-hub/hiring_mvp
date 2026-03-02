@@ -9,3 +9,4 @@ passlib[bcrypt]
 psycopg2-binary
 passlib[bcrypt]
 bcrypt<4
+itsdangerous
