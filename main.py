@@ -347,24 +347,46 @@ def _recalcular_notas_candidatos(cargo: "Job", novo_scorecard: dict) -> None:
         flag_modified(candidato, "evaluation")
 
 
-def _reavaliar_candidatos(cargo: "Job", novo_scorecard: dict) -> None:
-    """Re-evaluate all active candidates with AI using updated scorecard (Case B).
+def _reavaliar_criterios_alterados(cargo: "Job", scorecard: dict, pendentes: list) -> None:
+    """Re-evaluate only the changed criteria per candidate (Case B partial).
 
-    Errors per candidate are logged but do not abort the loop or the transaction.
+    For each candidate, re-evaluates only the criteria listed in `pendentes` using AI,
+    keeping all other criteria scores intact, then recalculates the total score.
+    Errors per criterion per candidate are logged but do not abort the loop.
     """
     for candidato in cargo.candidates:
         if candidato.is_deleted or candidato.evaluation is None:
             continue
-        try:
-            avaliacao = ai_client.avaliar_candidato(
-                novo_scorecard, candidato.name, candidato.transcript
-            )
-            candidato.evaluation = avaliacao
-            candidato.final_score = avaliacao["nota_final"]
-            flag_modified(candidato, "evaluation")
-        except Exception as e:
-            print(f"[REAVALIAR ERROR] candidato_id={candidato.id} erro={type(e).__name__}: {e}")
-            print(traceback.format_exc())
+        nova_eval = copy.deepcopy(candidato.evaluation)
+        for entrada in pendentes:
+            indice = entrada["indice"]
+            nome_anterior = entrada["nome_anterior"]
+            novo_criterio = scorecard["criterios"][indice]
+            try:
+                nova_av = ai_client.avaliar_criterio_unico(
+                    novo_criterio, candidato.name, candidato.transcript
+                )
+                # Replace the evaluation entry that matches the old criterion name
+                substituido = False
+                for j, av in enumerate(nova_eval["avaliacoes"]):
+                    if av["criterio"] == nome_anterior:
+                        nova_eval["avaliacoes"][j] = nova_av
+                        substituido = True
+                        break
+                if not substituido and indice < len(nova_eval["avaliacoes"]):
+                    nova_eval["avaliacoes"][indice] = nova_av
+            except Exception as e:
+                print(
+                    f"[REAVALIAR PARCIAL] candidato_id={candidato.id} "
+                    f"criterio={novo_criterio['nome']}: {type(e).__name__}: {e}"
+                )
+                print(traceback.format_exc())
+        nova_eval["nota_final"] = round(
+            sum(av["contribuicao"] for av in nova_eval["avaliacoes"]), 1
+        )
+        candidato.evaluation = nova_eval
+        candidato.final_score = nova_eval["nota_final"]
+        flag_modified(candidato, "evaluation")
 
 
 # ── Cargo routes ───────────────────────────────────────────────────────────────
@@ -467,9 +489,13 @@ def regenerar_criterio_rota(
         novo_scorecard = copy.deepcopy(cargo.scorecard)
         novo_scorecard["criterios"][criterio_idx] = novo
         ai_client._normalizar_pesos_inplace(novo_scorecard["criterios"])
+        # Track pending change — keep nome_anterior from first edit if already listed
+        pendentes = novo_scorecard.get("_pendentes", [])
+        if not any(e["indice"] == criterio_idx for e in pendentes):
+            pendentes.append({"indice": criterio_idx, "nome_anterior": criterio_anterior})
+        novo_scorecard["_pendentes"] = pendentes
         cargo.scorecard = novo_scorecard
         flag_modified(cargo, "scorecard")
-        _reavaliar_candidatos(cargo, novo_scorecard)
         db.commit()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=criterio_regenerado", status_code=303)
     except Exception as e:
@@ -492,6 +518,7 @@ def editar_criterio_rota(
         return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
     try:
         criterios = cargo.scorecard["criterios"]
+        nome_anterior = criterios[criterio_idx]["nome"]
         outros = [c["nome"] for i, c in enumerate(criterios) if i != criterio_idx]
         max_palavras = ai_client._max_palavras_rubrica(cargo.scorecard)
         nova_rubrica = ai_client.gerar_rubrica_criterio(
@@ -500,9 +527,13 @@ def editar_criterio_rota(
         novo_scorecard = copy.deepcopy(cargo.scorecard)
         novo_scorecard["criterios"][criterio_idx]["nome"] = novo_nome.strip()
         novo_scorecard["criterios"][criterio_idx]["rubrica"] = nova_rubrica
+        # Track pending change — keep nome_anterior from first edit if already listed
+        pendentes = novo_scorecard.get("_pendentes", [])
+        if not any(e["indice"] == criterio_idx for e in pendentes):
+            pendentes.append({"indice": criterio_idx, "nome_anterior": nome_anterior})
+        novo_scorecard["_pendentes"] = pendentes
         cargo.scorecard = novo_scorecard
         flag_modified(cargo, "scorecard")
-        _reavaliar_candidatos(cargo, novo_scorecard)
         db.commit()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=criterio_editado", status_code=303)
     except Exception as e:
@@ -539,6 +570,32 @@ def atualizar_pesos_rota(
     except Exception:
         print(traceback.format_exc())
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=erro", status_code=303)
+
+
+@app.post("/cargos/{cargo_id}/scorecard/salvar-alteracoes")
+def salvar_alteracoes_rota(
+    cargo_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cargo = _get_job(db, cargo_id, current_user)
+    if not cargo or not cargo.scorecard:
+        return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
+    try:
+        pendentes = cargo.scorecard.get("_pendentes", [])
+        if pendentes:
+            _reavaliar_criterios_alterados(cargo, cargo.scorecard, pendentes)
+        novo_scorecard = copy.deepcopy(cargo.scorecard)
+        novo_scorecard.pop("_pendentes", None)
+        cargo.scorecard = novo_scorecard
+        flag_modified(cargo, "scorecard")
+        db.commit()
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg=alteracoes_salvas", status_code=303)
+    except Exception as e:
+        code = _ai_msg_code(e)
+        print(f"[SALVAR ALTERACOES ERROR] type={type(e).__name__} code={code}")
+        print(traceback.format_exc())
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
 
 
 @app.post("/cargos/{cargo_id}/excluir")

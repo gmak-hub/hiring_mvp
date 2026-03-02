@@ -27,6 +27,8 @@
   <div class="msg msg-success">✓ Critério editado e descrição atualizada com sucesso.</div>
 {% elif msg == 'pesos_atualizados' %}
   <div class="msg msg-success">✓ Pesos atualizados e normalizados para 100%.</div>
+{% elif msg == 'alteracoes_salvas' %}
+  <div class="msg msg-success">✓ Alterações aplicadas. Candidatos com avaliação foram reavaliados nos critérios alterados.</div>
 {% elif msg == 'api_nao_configurada' %}
   <div class="msg msg-error">
     <strong>API não configurada.</strong> O arquivo <code>.env</code> não existe ou não contém <code>ANTHROPIC_API_KEY</code>.
@@ -153,6 +155,23 @@
           id="pesos-form" style="display:none;">
       <input type="hidden" name="pesos_json" id="pesos-json-input">
     </form>
+
+    <!-- Salvar alterações de critérios (só aparece quando há alterações pendentes) -->
+    {% set pendentes = job.scorecard.get('_pendentes', []) %}
+    {% if pendentes %}
+    {% set n = pendentes | length %}
+    <div class="pending-banner" style="margin-top:1rem;">
+      <span>
+        ⚠ {{ n }} critério{% if n > 1 %}s{% endif %} alterado{% if n > 1 %}s{% endif %} aguardando aplicação nos candidatos.
+      </span>
+      <form method="post" action="/cargos/{{ job.id }}/scorecard/salvar-alteracoes"
+            class="inline-form" id="salvar-alt-form">
+        <button type="submit" class="btn btn-sm btn-primary" id="btn-salvar-alt">
+          Salvar alterações ({{ n }} critério{% if n > 1 %}s{% endif %})
+        </button>
+      </form>
+    </div>
+    {% endif %}
   {% endif %}
 </div>
 
@@ -407,6 +426,15 @@ document.addEventListener('DOMContentLoaded', function() {
       if (btn) { btn.disabled = true; btn.textContent = 'Aguarde...'; }
     });
   });
+
+  // Loading state for "Salvar alterações"
+  const altForm = document.getElementById('salvar-alt-form');
+  if (altForm) {
+    altForm.addEventListener('submit', function() {
+      const btn = document.getElementById('btn-salvar-alt');
+      if (btn) { btn.disabled = true; btn.textContent = 'Reavaliando...'; }
+    });
+  }
 });
 </script>
 {% endblock %}

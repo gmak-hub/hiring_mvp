@@ -452,6 +452,65 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
     return rubrica
 
 
+def avaliar_criterio_unico(criterio: dict, nome_candidato: str, transcricao: str) -> dict:
+    """Evaluate a single criterion for a candidate given their transcript.
+
+    Returns one avaliacao dict in the same format as the entries inside
+    avaliar_candidato's "avaliacoes" list.
+    Raises AIParsingError if the response is invalid.
+    """
+    numerada = _numerar_linhas(transcricao)
+    rubrica_txt = "\n".join(f"  {k}: {v}" for k, v in sorted(criterio["rubrica"].items()))
+    nome_c = criterio["nome"]
+    peso_c = criterio["peso"]
+
+    prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos.
+Avalie o candidato abaixo para UM ÚNICO critério comportamental.
+
+Candidato: {nome_candidato}
+
+CRITÉRIO: {nome_c} (Peso: {peso_c}%)
+Rubrica:
+{rubrica_txt}
+
+=== TRANSCRIÇÃO (com número de linhas) ===
+{numerada}
+
+REGRAS:
+- Atribua nota 1–5 com base ESTRITAMENTE na definição da rubrica.
+- contribuicao = (nota × peso) / 5
+- confianca: "Baixo" se nenhuma evidência; "Médio" se evidência parcial; "Alto" se evidência clara e consistente.
+- evidencias: lista de CITAÇÕES DIRETAS da transcrição com número de linha: "[LINHA] 'citação exata'"
+- lacunas: o que NÃO foi demonstrado ou estava ausente
+- NUNCA invente evidências. Cite apenas linhas que existem na transcrição.
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "criterio": "{nome_c}",
+  "nota": 3,
+  "peso": {peso_c},
+  "contribuicao": 12.0,
+  "confianca": "Médio",
+  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "lacunas": "Não demonstrou X"
+}}"""
+
+    texto = _chamar_api(prompt, max_tokens=1024)
+
+    try:
+        bruto = _extrair_json(texto)
+        dados = json.loads(bruto)
+    except json.JSONDecodeError as e:
+        raise AIParsingError(f"JSON inválido ao avaliar critério único: {e}") from e
+
+    val = dados.get("confianca", "").lower().strip()
+    dados["confianca"] = MAPA_CONFIANCA.get(val, "Baixo")
+    dados["criterio"] = nome_c
+    dados["peso"] = peso_c
+    dados["contribuicao"] = round((dados["nota"] * peso_c) / 5, 1)
+    return dados
+
+
 def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) -> dict:
     numerada = _numerar_linhas(transcricao)
 
