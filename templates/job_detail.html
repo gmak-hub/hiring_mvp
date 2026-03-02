@@ -85,37 +85,40 @@
             <th>3 — Adequado</th>
             <th>4 — Forte</th>
             <th>5 — Excepcional</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for c in job.scorecard.criterios %}
           <tr id="sc-row-{{ loop.index0 }}">
-            <td class="criterion-name">{{ c.nome }}</td>
+            <td class="criterion-name">
+              <div class="criterio-nome-text">{{ c.nome }}</div>
+              <div class="criterio-actions">
+                <button type="button" class="btn btn-sm btn-ghost"
+                        onclick="toggleEditar({{ loop.index0 }})">✏ Editar</button>
+                <form method="post"
+                      action="/cargos/{{ job.id }}/scorecard/regenerar-criterio"
+                      class="inline-form" id="regen-form-{{ loop.index0 }}">
+                  <input type="hidden" name="criterio_idx" value="{{ loop.index0 }}">
+                  <button type="button" class="btn btn-sm btn-ghost"
+                          onclick="confirmarRegerar({{ loop.index0 }}, '{{ c.nome }}')">↺ Regenerar</button>
+                </form>
+              </div>
+            </td>
             <td>
-              <input type="number" class="peso-input" id="peso-{{ loop.index0 }}"
-                     value="{{ c.peso }}" min="1" max="98"
-                     data-idx="{{ loop.index0 }}" aria-label="Peso {{ c.nome }}">%
+              <span class="peso-wrapper">
+                <input type="number" class="peso-input" id="peso-{{ loop.index0 }}"
+                       value="{{ c.peso }}" min="1" max="98"
+                       data-idx="{{ loop.index0 }}" aria-label="Peso {{ c.nome }}">%
+              </span>
             </td>
             <td class="td-rubric">{{ c.rubrica["1"] }}</td>
             <td class="td-rubric">{{ c.rubrica["2"] }}</td>
             <td class="td-rubric">{{ c.rubrica["3"] }}</td>
             <td class="td-rubric">{{ c.rubrica["4"] }}</td>
             <td class="td-rubric">{{ c.rubrica["5"] }}</td>
-            <td class="td-actions" style="white-space:nowrap;">
-              <button type="button" class="btn btn-sm btn-ghost"
-                      onclick="toggleEditar({{ loop.index0 }})">✏ Editar</button>
-              <form method="post"
-                    action="/cargos/{{ job.id }}/scorecard/regenerar-criterio"
-                    class="inline-form" id="regen-form-{{ loop.index0 }}">
-                <input type="hidden" name="criterio_idx" value="{{ loop.index0 }}">
-                <button type="button" class="btn btn-sm btn-ghost"
-                        onclick="confirmarRegerar({{ loop.index0 }}, '{{ c.nome }}')">↺ Regenerar</button>
-              </form>
-            </td>
           </tr>
           <tr id="edit-row-{{ loop.index0 }}" class="edit-row" style="display:none;">
-            <td colspan="8">
+            <td colspan="7">
               <form method="post"
                     action="/cargos/{{ job.id }}/scorecard/editar-criterio"
                     class="edit-criterio-form"

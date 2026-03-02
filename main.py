@@ -322,6 +322,51 @@ def _get_job(db: Session, job_id: int, user: User) -> "Job | None":
     return q.first()
 
 
+# ── Scorecard candidate helpers ────────────────────────────────────────────────
+
+def _recalcular_notas_candidatos(cargo: "Job", novo_scorecard: dict) -> None:
+    """Recalculate candidate scores mathematically when only weights changed (Case A).
+
+    Keeps existing criterion notes; updates peso, contribuicao and nota_final.
+    """
+    pesos_por_nome = {c["nome"]: c["peso"] for c in novo_scorecard["criterios"]}
+    for candidato in cargo.candidates:
+        if candidato.is_deleted or candidato.evaluation is None:
+            continue
+        nova_eval = copy.deepcopy(candidato.evaluation)
+        for av in nova_eval["avaliacoes"]:
+            novo_peso = pesos_por_nome.get(av["criterio"])
+            if novo_peso is not None:
+                av["peso"] = novo_peso
+                av["contribuicao"] = round((av["nota"] * novo_peso) / 5, 1)
+        nova_eval["nota_final"] = round(
+            sum(av["contribuicao"] for av in nova_eval["avaliacoes"]), 1
+        )
+        candidato.evaluation = nova_eval
+        candidato.final_score = nova_eval["nota_final"]
+        flag_modified(candidato, "evaluation")
+
+
+def _reavaliar_candidatos(cargo: "Job", novo_scorecard: dict) -> None:
+    """Re-evaluate all active candidates with AI using updated scorecard (Case B).
+
+    Errors per candidate are logged but do not abort the loop or the transaction.
+    """
+    for candidato in cargo.candidates:
+        if candidato.is_deleted or candidato.evaluation is None:
+            continue
+        try:
+            avaliacao = ai_client.avaliar_candidato(
+                novo_scorecard, candidato.name, candidato.transcript
+            )
+            candidato.evaluation = avaliacao
+            candidato.final_score = avaliacao["nota_final"]
+            flag_modified(candidato, "evaluation")
+        except Exception as e:
+            print(f"[REAVALIAR ERROR] candidato_id={candidato.id} erro={type(e).__name__}: {e}")
+            print(traceback.format_exc())
+
+
 # ── Cargo routes ───────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -413,14 +458,18 @@ def regenerar_criterio_rota(
     if not cargo or not cargo.scorecard:
         return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
     try:
+        criterio_anterior = cargo.scorecard["criterios"][criterio_idx]["nome"]
+        max_palavras = ai_client._max_palavras_rubrica(cargo.scorecard)
         novo = ai_client.regenerar_criterio_ia(
-            cargo.scorecard, criterio_idx, cargo.name, cargo.description
+            cargo.scorecard, criterio_idx, cargo.name, cargo.description,
+            criterio_anterior, max_palavras,
         )
         novo_scorecard = copy.deepcopy(cargo.scorecard)
         novo_scorecard["criterios"][criterio_idx] = novo
         ai_client._normalizar_pesos_inplace(novo_scorecard["criterios"])
         cargo.scorecard = novo_scorecard
         flag_modified(cargo, "scorecard")
+        _reavaliar_candidatos(cargo, novo_scorecard)
         db.commit()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=criterio_regenerado", status_code=303)
     except Exception as e:
@@ -444,14 +493,16 @@ def editar_criterio_rota(
     try:
         criterios = cargo.scorecard["criterios"]
         outros = [c["nome"] for i, c in enumerate(criterios) if i != criterio_idx]
+        max_palavras = ai_client._max_palavras_rubrica(cargo.scorecard)
         nova_rubrica = ai_client.gerar_rubrica_criterio(
-            novo_nome.strip(), cargo.name, cargo.description, outros
+            novo_nome.strip(), cargo.name, cargo.description, outros, max_palavras
         )
         novo_scorecard = copy.deepcopy(cargo.scorecard)
         novo_scorecard["criterios"][criterio_idx]["nome"] = novo_nome.strip()
         novo_scorecard["criterios"][criterio_idx]["rubrica"] = nova_rubrica
         cargo.scorecard = novo_scorecard
         flag_modified(cargo, "scorecard")
+        _reavaliar_candidatos(cargo, novo_scorecard)
         db.commit()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=criterio_editado", status_code=303)
     except Exception as e:
@@ -482,6 +533,7 @@ def atualizar_pesos_rota(
         ai_client._normalizar_pesos_inplace(novo_scorecard["criterios"])
         cargo.scorecard = novo_scorecard
         flag_modified(cargo, "scorecard")
+        _recalcular_notas_candidatos(cargo, novo_scorecard)
         db.commit()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=pesos_atualizados", status_code=303)
     except Exception:

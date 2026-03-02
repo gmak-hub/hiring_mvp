@@ -138,6 +138,22 @@ def _normalizar_pesos_inplace(criterios: list) -> None:
         criterios[0]["peso"] += diferenca
 
 
+def _max_palavras_rubrica(scorecard: dict) -> int:
+    """Return the maximum word count across all rubric descriptions in the scorecard.
+
+    Used as the word-count ceiling when regenerating or editing a criterion,
+    so new descriptions never exceed the length of existing ones.
+    Clamped between 30 and 80 words.
+    """
+    max_p = 0
+    for c in scorecard.get("criterios", []):
+        for nivel in c.get("rubrica", {}).values():
+            count = len(nivel.split())
+            if count > max_p:
+                max_p = count
+    return max(30, min(max_p, 80))
+
+
 def _criterios_tecnicos(criterios: list) -> list[str]:
     """
     Returns the names of criteria whose name contains a technical/hard-skill word.
@@ -290,9 +306,18 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
     return dados
 
 
-def regenerar_criterio_ia(scorecard: dict, indice: int, nome_cargo: str, descricao_vaga: str) -> dict:
+def regenerar_criterio_ia(
+    scorecard: dict,
+    indice: int,
+    nome_cargo: str,
+    descricao_vaga: str,
+    criterio_anterior: str,
+    max_palavras: int,
+) -> dict:
     """Regenerate a single criterion (by index) with AI, keeping the others intact.
 
+    criterio_anterior: name of the criterion being replaced — the new one must differ.
+    max_palavras: maximum word count allowed per rubric description level.
     Returns the new criterion dict with the same peso as the original.
     Raises AIParsingError if validation fails after 2 attempts.
     """
@@ -307,18 +332,24 @@ Cargo: {nome_cargo}
 Descrição da Vaga:
 {descricao_vaga}
 
-Os outros 4 critérios já definidos no scorecard (NÃO repita estes):
+CRITÉRIO ANTERIOR A SER SUBSTITUÍDO: "{criterio_anterior}"
+IMPORTANTE: O novo critério deve ser DIFERENTE e NÃO PARECIDO com "{criterio_anterior}".
+Deve representar um conceito comportamental distinto — não o mesmo tema com outras palavras.
+
+Os outros 4 critérios já definidos no scorecard (NÃO repita nenhum destes nem o critério anterior):
 {', '.join(outros_nomes)}
 
-Gere EXATAMENTE 1 critério comportamental novo (diferente dos listados acima).
+Gere EXATAMENTE 1 critério comportamental novo.
 
 REGRAS ABSOLUTAS:
 ✗ PROIBIDO: hard skills técnicas, ferramentas, linguagens, certificações, idiomas
-✓ OBRIGATÓRIO: comportamento observável, soft skill, fit cultural
+✗ PROIBIDO: repetir ou reescrever "{criterio_anterior}" com sinônimos
+✓ OBRIGATÓRIO: comportamento observável, soft skill, fit cultural — diferente dos existentes
 
 FORMATO:
 - nome: UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução")
 - rubrica: 5 níveis descritivos e específicos para este cargo
+- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {{
@@ -369,9 +400,11 @@ def gerar_rubrica_criterio(
     nome_cargo: str,
     descricao_vaga: str,
     outros_criterios: list,
+    max_palavras: int,
 ) -> dict:
     """Generate rubric levels 1-5 for a manually-named criterion.
 
+    max_palavras: maximum word count allowed per description level.
     Returns a rubric dict with keys "1" through "5".
     Raises AIParsingError if the response is invalid.
     """
@@ -391,6 +424,7 @@ REGRAS:
 - Descreva comportamentos observáveis e específicos para este cargo
 - Cada nível deve ser distinto e claro
 - Escala: 1=ausente, 2=fraco, 3=adequado, 4=forte, 5=excepcional
+- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {{

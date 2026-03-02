@@ -340,7 +340,24 @@ table tr:hover td { background: #fafafa; }
 .peso-input::-webkit-outer-spin-button { opacity: 1; }
 .peso-input:focus { outline: 2px solid #3b82f6; border-color: #3b82f6; }
 
-.td-actions { vertical-align: middle; }
+.peso-wrapper {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  gap: 0.2rem;
+}
+
+.criterio-nome-text {
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.criterio-actions {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
 
 .edit-row td {
   background: #f8fafc;
