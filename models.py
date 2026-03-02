@@ -4,19 +4,50 @@ from datetime import datetime
 from dotenv import load_dotenv
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.pool import NullPool
 from sqlalchemy.types import JSON
 
 load_dotenv()
 
-# ── Database URL ───────────────────────────────────────────────────────────────
-# Supabase/Heroku expose "postgres://" but SQLAlchemy requires "postgresql://"
-_raw_url = os.getenv("DATABASE_URL", "sqlite:///./hiring.db")
-DATABASE_URL = _raw_url.replace("postgres://", "postgresql://", 1) if _raw_url.startswith("postgres://") else _raw_url
 
-_is_sqlite = DATABASE_URL.startswith("sqlite")
-_connect_args = {"check_same_thread": False} if _is_sqlite else {}
+# ── Database URL helpers ────────────────────────────────────────────────────────
 
-engine = create_engine(DATABASE_URL, connect_args=_connect_args)
+def _normalize_url(raw: str) -> str:
+    """
+    Normalize a Postgres URL for SQLAlchemy:
+    - Fixes postgres:// → postgresql://
+    - Strips ?pgbouncer=true (a Supabase/Prisma hint that psycopg2 does not understand)
+    """
+    url = raw.strip()
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    url = url.replace("?pgbouncer=true", "").replace("&pgbouncer=true", "")
+    return url
+
+
+_raw_url = os.getenv("DATABASE_URL")
+if not _raw_url or not _raw_url.strip():
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Add your Supabase connection string to the .env file or deployment environment."
+    )
+
+# ── Engines ────────────────────────────────────────────────────────────────────
+#
+# DATABASE_URL  → Supabase PgBouncer pooler (port 6543). Used for all app queries.
+#                 NullPool is used so serverless invocations don't compete over
+#                 a shared pool — PgBouncer already handles pooling externally.
+#
+# DIRECT_URL    → Direct Postgres connection (port 5432). Required for DDL
+#                 (CREATE TABLE / ALTER TABLE) which PgBouncer transaction mode
+#                 does not support reliably. Falls back to DATABASE_URL if unset.
+
+DATABASE_URL = _normalize_url(_raw_url)
+engine = create_engine(DATABASE_URL, poolclass=NullPool)
+
+_raw_direct = os.getenv("DIRECT_URL") or _raw_url
+_direct_engine = create_engine(_normalize_url(_raw_direct), poolclass=NullPool)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -101,12 +132,13 @@ def get_db():
 def _migrate_db():
     """
     Idempotently add new columns to existing tables.
-    Works for both SQLite and PostgreSQL by checking column existence first.
+    Runs via the direct connection (DIRECT_URL) so DDL works correctly
+    even when the app engine is behind PgBouncer.
     """
     from sqlalchemy import inspect, text
 
-    with engine.connect() as conn:
-        inspector = inspect(engine)
+    with _direct_engine.connect() as conn:
+        inspector = inspect(_direct_engine)
         existing_tables = inspector.get_table_names()
 
         def _col_names(table: str) -> set:
@@ -118,7 +150,7 @@ def _migrate_db():
             if "company_id" not in cols:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN company_id INTEGER REFERENCES companies(id)"))
             if "is_deleted" not in cols:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0"))
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE"))
             if "deleted_at" not in cols:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN deleted_at TIMESTAMP"))
 
@@ -126,7 +158,7 @@ def _migrate_db():
         if "candidates" in existing_tables:
             cols = _col_names("candidates")
             if "is_deleted" not in cols:
-                conn.execute(text("ALTER TABLE candidates ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0"))
+                conn.execute(text("ALTER TABLE candidates ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE"))
             if "deleted_at" not in cols:
                 conn.execute(text("ALTER TABLE candidates ADD COLUMN deleted_at TIMESTAMP"))
 
@@ -141,10 +173,7 @@ def _migrate_db():
             cols = _col_names("users")
             if "status" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'"))
-                # Sync status from existing is_active flag
                 conn.execute(text(
-                    "UPDATE users SET status = CASE WHEN is_active = 1 THEN 'active' ELSE 'blocked' END"
-                    if _is_sqlite else
                     "UPDATE users SET status = CASE WHEN is_active = TRUE THEN 'active' ELSE 'blocked' END"
                 ))
 
@@ -152,5 +181,5 @@ def _migrate_db():
 
 
 def create_tables():
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=_direct_engine)
     _migrate_db()
