@@ -1,13 +1,14 @@
 import copy
 import json
 import os
+import tempfile
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 
 from sqlalchemy.orm.attributes import flag_modified
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 import ai_client
-from ai_client import AIAuthError, AIConfigError, AIParsingError, AITimeoutError
+from ai_client import AIAuthError, AIConfigError, AIParsingError, AITimeoutError, AITranscriptionError
 from auth import (
     RequiresLoginException,
     authenticate_user,
@@ -117,6 +118,8 @@ def _ai_msg_code(exc: Exception) -> str:
         return "erro_ai_timeout"
     if isinstance(exc, AIParsingError):
         return "erro_ai_parsing"
+    if isinstance(exc, AITranscriptionError):
+        return "erro_transcricao"
     return "erro"
 
 
@@ -619,13 +622,14 @@ def excluir_cargo(
 def formulario_novo_candidato(
     request: Request,
     cargo_id: int,
+    msg: str = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     cargo = _get_job(db, cargo_id, current_user)
     if not cargo or not cargo.scorecard:
         return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
-    return templates.TemplateResponse("candidate_new.html", ctx(request, current_user, job=cargo))
+    return templates.TemplateResponse("candidate_new.html", ctx(request, current_user, job=cargo, msg=msg))
 
 
 @app.post("/cargos/{cargo_id}/candidatos")
@@ -656,6 +660,81 @@ def criar_candidato(
     except Exception as e:
         code = _ai_msg_code(e)
         print(f"[AVALIAÇÃO ERROR] type={type(e).__name__} code={code} cargo_id={cargo_id}")
+        print(traceback.format_exc())
+        db.rollback()
+        return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
+
+
+@app.post("/cargos/{cargo_id}/candidatos/video")
+def criar_candidato_video(
+    cargo_id: int,
+    name: str = Form(...),
+    video: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cargo = _get_job(db, cargo_id, current_user)
+    if not cargo or not cargo.scorecard:
+        return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
+
+    ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4a"}
+    LIMITE_BYTES = 500 * 1024 * 1024  # 500 MB
+
+    ext = os.path.splitext(video.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return RedirectResponse(
+            url=f"/cargos/{cargo_id}/candidatos/novo?msg=formato_invalido",
+            status_code=303,
+        )
+
+    video_path: str | None = None
+    transcript: str | None = None
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            video_path = tmp.name
+            tamanho = 0
+            while True:
+                chunk = video.file.read(256 * 1024)  # 256 KB chunks
+                if not chunk:
+                    break
+                tamanho += len(chunk)
+                if tamanho > LIMITE_BYTES:
+                    raise AITranscriptionError("O arquivo enviado excede o limite de 500 MB.")
+                tmp.write(chunk)
+
+        transcript = ai_client.transcrever_audio(video_path)
+
+    except Exception as e:
+        code = _ai_msg_code(e)
+        print(f"[VIDEO TRANSCRIÇÃO ERROR] type={type(e).__name__} code={code} cargo_id={cargo_id}")
+        print(traceback.format_exc())
+        return RedirectResponse(
+            url=f"/cargos/{cargo_id}/candidatos/novo?msg={code}", status_code=303
+        )
+    finally:
+        if video_path and os.path.exists(video_path):
+            try:
+                os.unlink(video_path)
+            except OSError:
+                pass
+
+    candidato = Candidate(job_id=cargo_id, name=name.strip(), transcript=transcript)
+    db.add(candidato)
+    db.flush()
+
+    try:
+        avaliacao = ai_client.avaliar_candidato(cargo.scorecard, candidato.name, transcript)
+        candidato.evaluation = avaliacao
+        candidato.final_score = avaliacao["nota_final"]
+        db.commit()
+        db.refresh(candidato)
+        return RedirectResponse(
+            url=f"/cargos/{cargo_id}/candidatos/{candidato.id}", status_code=303
+        )
+    except Exception as e:
+        code = _ai_msg_code(e)
+        print(f"[VIDEO AVALIAÇÃO ERROR] type={type(e).__name__} code={code} cargo_id={cargo_id}")
         print(traceback.format_exc())
         db.rollback()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)

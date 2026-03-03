@@ -46,6 +46,10 @@
   <div class="msg msg-error">
     <strong>A IA retornou um formato inesperado.</strong> Tente novamente — pode ser instabilidade temporária do modelo.
   </div>
+{% elif msg == 'erro_transcricao' %}
+  <div class="msg msg-error">
+    <strong>Erro na transcrição do vídeo.</strong> O arquivo pode estar corrompido, sem áudio audível, ou o servidor não pôde processar. Tente novamente ou use a transcrição manual.
+  </div>
 {% elif msg == 'erro' or msg == 'erro_avaliacao' %}
   <div class="msg msg-error">
     <strong>Erro inesperado.</strong> Verifique os logs do servidor para mais detalhes.

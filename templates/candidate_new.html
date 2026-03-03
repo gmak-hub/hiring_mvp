@@ -8,33 +8,185 @@
   <h1>Adicionar Candidato</h1>
 </div>
 
-<form method="post" action="/cargos/{{ job.id }}/candidatos" class="form" id="formulario-candidato">
-  <div class="form-group">
-    <label for="name">Nome do Candidato</label>
-    <input type="text" id="name" name="name" required placeholder="Nome completo">
+{% if msg == 'formato_invalido' %}
+  <div class="msg msg-error">Formato de arquivo inválido. Envie um arquivo <strong>.mp4</strong>, <strong>.mov</strong> ou <strong>.m4a</strong>.</div>
+{% elif msg == 'erro_transcricao' %}
+  <div class="msg msg-error">
+    <strong>Erro na transcrição.</strong> O áudio não pôde ser processado. Verifique se o arquivo contém áudio audível e tente novamente, ou use a transcrição manual.
   </div>
-  <div class="form-group">
-    <label for="transcript">
-      Transcrição da Entrevista
-      <span class="label-hint">Cole o texto completo. Marcações de tempo são opcionais — o sistema numerará as linhas automaticamente.</span>
-    </label>
-    <textarea id="transcript" name="transcript" rows="22" required
-      placeholder="Entrevistador: Me conta sobre sua experiência gerenciando equipes de engenharia...&#10;&#10;Candidato: Claro. Nos últimos 3 anos fui líder técnico de uma equipe de 8 pessoas...&#10;&#10;Entrevistador: Como você lidou com um membro de baixo desempenho?&#10;&#10;Candidato: ..."></textarea>
+{% elif msg == 'api_nao_configurada' %}
+  <div class="msg msg-error">
+    <strong>API não configurada.</strong> Verifique as chaves de API no arquivo <code>.env</code>.
   </div>
-  <div class="form-actions">
-    <a href="/cargos/{{ job.id }}" class="btn btn-ghost">Cancelar</a>
-    <button type="submit" class="btn btn-primary" id="btn-avaliar">Avaliar Candidato</button>
+{% elif msg == 'erro_ai_timeout' %}
+  <div class="msg msg-error">
+    <strong>A IA demorou demais.</strong> Aguarde alguns segundos e tente novamente.
   </div>
-  <p class="loading-msg" id="avaliando">Avaliando com IA... pode levar até 30 segundos.</p>
-</form>
+{% elif msg == 'erro_ai_parsing' %}
+  <div class="msg msg-error">
+    <strong>Erro no retorno da IA.</strong> Tente novamente.
+  </div>
+{% elif msg %}
+  <div class="msg msg-error">Erro inesperado. Tente novamente.</div>
+{% endif %}
+
+<!-- ── Tab switcher ─────────────────────────────────────────────────────── -->
+<div class="input-tabs" role="tablist">
+  <button type="button" class="input-tab active" id="tab-texto"
+          role="tab" aria-selected="true" aria-controls="painel-texto"
+          onclick="trocarAba('texto')">
+    Transcrição Manual
+  </button>
+  <button type="button" class="input-tab" id="tab-video"
+          role="tab" aria-selected="false" aria-controls="painel-video"
+          onclick="trocarAba('video')">
+    Upload de Vídeo
+  </button>
+</div>
+
+<!-- ── Painel 1: Transcrição manual (fluxo existente, sem alterações) ───── -->
+<div id="painel-texto" role="tabpanel">
+  <form method="post" action="/cargos/{{ job.id }}/candidatos"
+        class="form" id="formulario-texto">
+    <div class="form-group">
+      <label for="name-texto">Nome do Candidato</label>
+      <input type="text" id="name-texto" name="name" required placeholder="Nome completo">
+    </div>
+    <div class="form-group">
+      <label for="transcript">
+        Transcrição da Entrevista
+        <span class="label-hint">Cole o texto completo. Marcações de tempo são opcionais — o sistema numerará as linhas automaticamente.</span>
+      </label>
+      <textarea id="transcript" name="transcript" rows="22" required
+        placeholder="Entrevistador: Me conta sobre sua experiência gerenciando equipes de engenharia...&#10;&#10;Candidato: Claro. Nos últimos 3 anos fui líder técnico de uma equipe de 8 pessoas...&#10;&#10;Entrevistador: Como você lidou com um membro de baixo desempenho?&#10;&#10;Candidato: ..."></textarea>
+    </div>
+    <div class="form-actions">
+      <a href="/cargos/{{ job.id }}" class="btn btn-ghost">Cancelar</a>
+      <button type="submit" class="btn btn-primary" id="btn-avaliar-texto">Avaliar Candidato</button>
+    </div>
+    <p class="loading-msg" id="avaliando-texto">Avaliando com IA... pode levar até 30 segundos.</p>
+  </form>
+</div>
+
+<!-- ── Painel 2: Upload de vídeo ─────────────────────────────────────────── -->
+<div id="painel-video" role="tabpanel" style="display:none;">
+  <form method="post" action="/cargos/{{ job.id }}/candidatos/video"
+        class="form" id="formulario-video"
+        enctype="multipart/form-data">
+    <div class="form-group">
+      <label for="name-video">Nome do Candidato</label>
+      <input type="text" id="name-video" name="name" required placeholder="Nome completo">
+    </div>
+    <div class="form-group">
+      <label>
+        Arquivo de Entrevista
+        <span class="label-hint">Formatos aceitos: .mp4, .mov, .m4a — tamanho máximo 500 MB. A transcrição é gerada automaticamente.</span>
+      </label>
+      <label class="upload-area" id="upload-label" for="video-input">
+        <span class="upload-icon">&#8679;</span>
+        <span class="upload-text" id="upload-text">Clique para selecionar ou arraste o arquivo aqui</span>
+        <span class="upload-hint">MP4, MOV ou M4A</span>
+        <input type="file" id="video-input" name="video"
+               accept=".mp4,.mov,.m4a,video/mp4,video/quicktime,audio/mp4,audio/x-m4a"
+               required style="display:none;">
+      </label>
+    </div>
+    <div class="form-actions">
+      <a href="/cargos/{{ job.id }}" class="btn btn-ghost">Cancelar</a>
+      <button type="submit" class="btn btn-primary" id="btn-avaliar-video">Transcrever e Avaliar</button>
+    </div>
+    <p class="loading-msg" id="avaliando-video">Enviando e transcrevendo... pode levar 1–2 minutos dependendo do tamanho do arquivo.</p>
+  </form>
+</div>
 
 <script>
-document.getElementById('formulario-candidato').addEventListener('submit', function () {
-  const btn = document.getElementById('btn-avaliar');
-  const avaliando = document.getElementById('avaliando');
+// ── Troca de abas ─────────────────────────────────────────────────────────────
+function trocarAba(aba) {
+  var painelTexto = document.getElementById('painel-texto');
+  var painelVideo = document.getElementById('painel-video');
+  var tabTexto    = document.getElementById('tab-texto');
+  var tabVideo    = document.getElementById('tab-video');
+
+  if (aba === 'texto') {
+    painelTexto.style.display = '';
+    painelVideo.style.display = 'none';
+    tabTexto.classList.add('active');
+    tabTexto.setAttribute('aria-selected', 'true');
+    tabVideo.classList.remove('active');
+    tabVideo.setAttribute('aria-selected', 'false');
+  } else {
+    painelTexto.style.display = 'none';
+    painelVideo.style.display = '';
+    tabTexto.classList.remove('active');
+    tabTexto.setAttribute('aria-selected', 'false');
+    tabVideo.classList.add('active');
+    tabVideo.setAttribute('aria-selected', 'true');
+  }
+}
+
+// Restaura aba de vídeo se o erro veio do fluxo de vídeo
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var msg = params.get('msg');
+  if (msg === 'erro_transcricao' || msg === 'formato_invalido' || msg === 'api_nao_configurada') {
+    trocarAba('video');
+  }
+})();
+
+// ── Loading state — formulário de texto ───────────────────────────────────────
+document.getElementById('formulario-texto').addEventListener('submit', function () {
+  var btn = document.getElementById('btn-avaliar-texto');
+  var avaliando = document.getElementById('avaliando-texto');
   btn.disabled = true;
   btn.textContent = 'Avaliando...';
   avaliando.style.display = 'block';
+});
+
+// ── Mostra nome do arquivo selecionado ────────────────────────────────────────
+document.getElementById('video-input').addEventListener('change', function () {
+  var label = document.getElementById('upload-text');
+  if (this.files && this.files[0]) {
+    var mb = (this.files[0].size / (1024 * 1024)).toFixed(1);
+    label.textContent = this.files[0].name + ' (' + mb + ' MB)';
+  }
+});
+
+// ── Loading state — formulário de vídeo ──────────────────────────────────────
+document.getElementById('formulario-video').addEventListener('submit', function () {
+  var input = document.getElementById('video-input');
+  if (!input.files || !input.files[0]) return;
+  var btn = document.getElementById('btn-avaliar-video');
+  var avaliando = document.getElementById('avaliando-video');
+  btn.disabled = true;
+  btn.textContent = 'Transcrevendo...';
+  avaliando.style.display = 'block';
+});
+
+// ── Drag-and-drop ─────────────────────────────────────────────────────────────
+var uploadLabel = document.getElementById('upload-label');
+
+uploadLabel.addEventListener('dragover', function (e) {
+  e.preventDefault();
+  uploadLabel.classList.add('upload-area-drag');
+});
+
+uploadLabel.addEventListener('dragleave', function () {
+  uploadLabel.classList.remove('upload-area-drag');
+});
+
+uploadLabel.addEventListener('drop', function (e) {
+  e.preventDefault();
+  uploadLabel.classList.remove('upload-area-drag');
+  var input = document.getElementById('video-input');
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    // Assign dropped files to the input
+    try {
+      input.files = e.dataTransfer.files;
+    } catch (err) {}
+    var mb = (e.dataTransfer.files[0].size / (1024 * 1024)).toFixed(1);
+    document.getElementById('upload-text').textContent =
+      e.dataTransfer.files[0].name + ' (' + mb + ' MB)';
+  }
 });
 </script>
 {% endblock %}

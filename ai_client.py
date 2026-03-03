@@ -11,6 +11,8 @@ Error hierarchy:
 
 import json
 import os
+import subprocess
+import tempfile
 
 from anthropic import Anthropic, APIConnectionError, APIStatusError, APITimeoutError
 from dotenv import load_dotenv
@@ -83,6 +85,10 @@ class AIParsingError(AIError):
     """A API retornou conteúdo inesperado (não-JSON ou shape errado)."""
 
 
+class AITranscriptionError(AIError):
+    """Erro durante extração de áudio (ffmpeg) ou transcrição (Whisper/OpenAI)."""
+
+
 # ── Lazy client ────────────────────────────────────────────────────────────────
 
 _client: "Anthropic | None" = None
@@ -102,6 +108,111 @@ def _get_client() -> Anthropic:
 
     _client = Anthropic(api_key=api_key.strip())
     return _client
+
+
+# ── Lazy OpenAI client (Whisper) ───────────────────────────────────────────────
+
+_openai_client = None
+
+
+def _get_openai_client():
+    global _openai_client
+    if _openai_client is not None:
+        return _openai_client
+
+    import openai as _openai_sdk
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or not api_key.strip():
+        raise AIConfigError(
+            "OPENAI_API_KEY não está configurada. "
+            "Adicione sua chave da OpenAI ao arquivo .env."
+        )
+
+    _openai_client = _openai_sdk.OpenAI(api_key=api_key.strip())
+    return _openai_client
+
+
+def transcrever_audio(video_path: str) -> str:
+    """Extrai áudio via ffmpeg e transcreve com OpenAI Whisper.
+
+    Cria um mp3 temporário (32kbps mono) para manter o arquivo abaixo do
+    limite de 25 MB do Whisper mesmo em entrevistas de 2+ horas.
+    O mp3 é deletado no bloco finally; o vídeo é deletado pelo chamador.
+    """
+    mp3_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            mp3_path = tmp.name
+
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vn",
+                "-acodec", "libmp3lame",
+                "-ac", "1",
+                "-ab", "32k",
+                mp3_path,
+            ],
+            capture_output=True,
+            timeout=300,
+        )
+
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace")
+            raise AITranscriptionError(
+                f"ffmpeg falhou ao extrair áudio (código {result.returncode}): {stderr[:400]}"
+            )
+
+        mp3_size_mb = os.path.getsize(mp3_path) / (1024 * 1024)
+        if mp3_size_mb > 24.5:
+            raise AITranscriptionError(
+                f"Áudio comprimido tem {mp3_size_mb:.1f} MB e excede o limite de 25 MB do Whisper. "
+                "Tente um arquivo mais curto."
+            )
+
+        client = _get_openai_client()
+        with open(mp3_path, "rb") as audio_file:
+            resposta = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="pt",
+                response_format="text",
+            )
+
+        transcricao = resposta if isinstance(resposta, str) else resposta.text
+        if not transcricao or not transcricao.strip():
+            raise AITranscriptionError(
+                "Whisper retornou transcrição vazia. Verifique se o arquivo contém áudio audível."
+            )
+
+        return transcricao.strip()
+
+    except AIError:
+        raise
+
+    except subprocess.TimeoutExpired:
+        raise AITranscriptionError(
+            "Extração de áudio excedeu o tempo limite (5 min). Tente um arquivo menor."
+        )
+
+    except FileNotFoundError:
+        raise AITranscriptionError(
+            "ffmpeg não encontrado no servidor. Instale o pacote ffmpeg no ambiente."
+        )
+
+    except Exception as e:
+        raise AITranscriptionError(
+            f"Erro inesperado durante a transcrição: {type(e).__name__}: {e}"
+        ) from e
+
+    finally:
+        if mp3_path and os.path.exists(mp3_path):
+            try:
+                os.unlink(mp3_path)
+            except OSError:
+                pass
 
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
