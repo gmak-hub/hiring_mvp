@@ -564,6 +564,7 @@ def atualizar_pesos_rota(
         for i, p in enumerate(lista_pesos):
             novo_scorecard["criterios"][i]["peso"] = max(1, int(p))
         ai_client._normalizar_pesos_inplace(novo_scorecard["criterios"])
+        novo_scorecard["criterios"].sort(key=lambda c: c["peso"], reverse=True)
         cargo.scorecard = novo_scorecard
         flag_modified(cargo, "scorecard")
         _recalcular_notas_candidatos(cargo, novo_scorecard)
