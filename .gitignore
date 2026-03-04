@@ -208,3 +208,5 @@ __marimo__/
 *.db
 .env.save
 schema.sql
+.env.save
+schema.sql
