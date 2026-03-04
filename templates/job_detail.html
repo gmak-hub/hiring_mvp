@@ -342,7 +342,7 @@ function confirmarRegerar(idx, nomeCriterio) {
   }
 }
 
-// ── Peso inputs: auto-normalize to 100% ───────────────────────────────────────
+// ── Peso inputs ───────────────────────────────────────────────────────────────
 
 function _getPesoInputs() {
   return Array.from(document.querySelectorAll('.peso-input'));
@@ -361,43 +361,6 @@ function _atualizarDisplay() {
   if (btn) btn.disabled = total !== 100;
 }
 
-function distribuirPesos(alteredIdx) {
-  const inputs = _getPesoInputs();
-  if (inputs.length === 0) return;
-
-  let altVal = parseInt(inputs[alteredIdx].value) || 1;
-  altVal = Math.max(1, Math.min(100 - (inputs.length - 1), altVal));
-  inputs[alteredIdx].value = altVal;
-
-  const others = inputs.filter(function(_, i) { return i !== alteredIdx; });
-  const remaining = 100 - altVal;
-  const sumOthers = others.reduce(function(s, inp) { return s + (parseInt(inp.value) || 0); }, 0);
-
-  if (others.length === 0) {
-    _atualizarDisplay();
-    return;
-  }
-
-  if (sumOthers === 0) {
-    const base = Math.floor(remaining / others.length);
-    const extra = remaining - base * others.length;
-    others.forEach(function(inp, i) { inp.value = base + (i === 0 ? extra : 0); });
-  } else {
-    let distributed = 0;
-    others.forEach(function(inp, i) {
-      if (i < others.length - 1) {
-        const share = Math.round(remaining * ((parseInt(inp.value) || 0) / sumOthers));
-        inp.value = Math.max(1, share);
-        distributed += Math.max(1, share);
-      } else {
-        inp.value = Math.max(1, remaining - distributed);
-      }
-    });
-  }
-
-  _atualizarDisplay();
-}
-
 function salvarPesos() {
   const inputs = _getPesoInputs();
   const pesos = inputs.map(function(inp) { return parseInt(inp.value) || 0; });
@@ -414,12 +377,8 @@ function salvarPesos() {
 // Attach listeners after DOM ready
 document.addEventListener('DOMContentLoaded', function() {
   _getPesoInputs().forEach(function(inp) {
-    inp.addEventListener('change', function() {
-      distribuirPesos(parseInt(this.dataset.idx));
-    });
-    inp.addEventListener('input', function() {
-      _atualizarDisplay();
-    });
+    inp.addEventListener('change', _atualizarDisplay);
+    inp.addEventListener('input', _atualizarDisplay);
   });
   _atualizarDisplay();
 
