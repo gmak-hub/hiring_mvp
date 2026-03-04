@@ -87,6 +87,10 @@
                   <input type="hidden" name="novo_status" value="active">
                   <button type="submit" class="btn btn-sm btn-ghost">Reativar</button>
                 </form>
+                <form method="post" action="/admin/empresas/{{ empresa.id }}/excluir" class="inline-form"
+                      onsubmit="return confirm('Excluir permanentemente &quot;{{ empresa.name }}&quot; e todos os seus usuários e cargos? Esta ação não pode ser desfeita.')">
+                  <button type="submit" class="btn btn-sm btn-danger">Excluir</button>
+                </form>
               {% endif %}
               <button type="button" class="btn btn-sm btn-ghost"
                       onclick="toggleEdit('edit-emp-{{ empresa.id }}')">Editar nome</button>
@@ -220,6 +224,10 @@
                   <form method="post" action="/admin/usuarios/{{ u.id }}/status" class="inline-form">
                     <input type="hidden" name="novo_status" value="active">
                     <button type="submit" class="btn btn-sm btn-ghost">Reativar</button>
+                  </form>
+                  <form method="post" action="/admin/usuarios/{{ u.id }}/excluir" class="inline-form"
+                        onsubmit="return confirm('Excluir permanentemente o usuário &quot;{{ u.name }}&quot;? Esta ação não pode ser desfeita.')">
+                    <button type="submit" class="btn btn-sm btn-danger">Excluir</button>
                   </form>
                 {% endif %}
               {% else %}

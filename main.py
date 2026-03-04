@@ -895,6 +895,37 @@ def mudar_status_usuario(
     return RedirectResponse(url="/admin", status_code=303)
 
 
+@app.post("/admin/usuarios/{user_id}/excluir")
+def excluir_usuario_permanente(
+    user_id: int,
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user and user.role != "superadmin" and user.status == "blocked":
+        db.delete(user)
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/empresas/{empresa_id}/excluir")
+def excluir_empresa_permanente(
+    empresa_id: int,
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    empresa = db.query(Company).filter(Company.id == empresa_id).first()
+    if empresa and empresa.status == "blocked":
+        job_ids = [j.id for j in db.query(Job).filter(Job.company_id == empresa_id).all()]
+        if job_ids:
+            db.query(Candidate).filter(Candidate.job_id.in_(job_ids)).delete(synchronize_session=False)
+            db.query(Job).filter(Job.company_id == empresa_id).delete(synchronize_session=False)
+        db.query(User).filter(User.company_id == empresa_id).delete(synchronize_session=False)
+        db.delete(empresa)
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
 @app.post("/admin/impersonar/{user_id}")
 def impersonar_usuario(
     request: Request,
