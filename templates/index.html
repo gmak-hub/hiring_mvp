@@ -14,6 +14,9 @@
     <div class="card-header">
       <h2><a href="/cargos/{{ cargo.id }}" style="color: var(--text);">{{ cargo.name }}</a></h2>
       <div style="display:flex; gap:0.5rem; align-items:center;">
+        {% if user.role == 'superadmin' and cargo.company %}
+          <span class="badge badge-blue">{{ cargo.company.name }}</span>
+        {% endif %}
         {% if cargo.scorecard %}
           <span class="badge badge-green">Scorecard gerado</span>
         {% else %}
