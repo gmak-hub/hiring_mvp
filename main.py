@@ -226,9 +226,6 @@ def fazer_registro(
     if len(senha) < 6:
         errors.append("A senha deve ter pelo menos 6 caracteres.")
 
-    if db.query(Company).filter(Company.name.ilike(nome_empresa.strip())).first():
-        errors.append(f'Já existe uma empresa com o nome "{nome_empresa.strip()}".')
-
     if db.query(User).filter(User.username == usuario.strip()).first():
         errors.append(f'O usuário "{usuario.strip()}" já está em uso.')
 
@@ -240,13 +237,15 @@ def fazer_registro(
             status_code=422,
         )
 
-    # Create pending company + admin user
-    new_company = Company(name=nome_empresa.strip(), status="pending")
-    db.add(new_company)
-    db.flush()
+    # Find existing company or create a new pending one
+    company = db.query(Company).filter(Company.name.ilike(nome_empresa.strip())).first()
+    if company is None:
+        company = Company(name=nome_empresa.strip(), status="pending")
+        db.add(company)
+        db.flush()
 
     new_user = User(
-        company_id=new_company.id,
+        company_id=company.id,
         username=usuario.strip(),
         name=nome.strip(),
         password_hash=hash_password(senha),
