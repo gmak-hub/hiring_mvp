@@ -396,14 +396,21 @@ def _reavaliar_criterios_alterados(cargo: "Job", scorecard: dict, pendentes: lis
 @app.get("/", response_class=HTMLResponse)
 def pagina_inicial(
     request: Request,
+    empresa_id: int = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     q = db.query(Job).filter(Job.is_deleted == False)  # noqa: E712
     if current_user.role != "superadmin":
         q = q.filter(Job.company_id == current_user.company_id)
+    elif empresa_id:
+        q = q.filter(Job.company_id == empresa_id)
     cargos = q.order_by(Job.created_at.desc()).all()
-    return templates.TemplateResponse("index.html", ctx(request, current_user, jobs=cargos))
+    empresas = db.query(Company).order_by(Company.name).all() if current_user.role == "superadmin" else []
+    return templates.TemplateResponse(
+        "index.html",
+        ctx(request, current_user, jobs=cargos, empresas=empresas, empresa_id=empresa_id),
+    )
 
 
 @app.get("/cargos/novo", response_class=HTMLResponse)
