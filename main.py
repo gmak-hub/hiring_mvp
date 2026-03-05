@@ -44,6 +44,10 @@ def _seed_initial_data(db: Session) -> None:
             {"company_id": default_company.id}
         )
 
+    if not db.query(Company).filter(Company.name == "Teste").first():
+        db.add(Company(name="Teste", status="active"))
+        db.flush()
+
     if not db.query(User).filter(User.role == "superadmin").first():
         superadmin = User(
             username="admin",
@@ -396,20 +400,21 @@ def _reavaliar_criterios_alterados(cargo: "Job", scorecard: dict, pendentes: lis
 @app.get("/", response_class=HTMLResponse)
 def pagina_inicial(
     request: Request,
-    empresa_id: int = None,
+    empresa_id: str = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _empresa_id = int(empresa_id) if empresa_id else None
     q = db.query(Job).filter(Job.is_deleted == False)  # noqa: E712
     if current_user.role != "superadmin":
         q = q.filter(Job.company_id == current_user.company_id)
-    elif empresa_id:
-        q = q.filter(Job.company_id == empresa_id)
+    elif _empresa_id:
+        q = q.filter(Job.company_id == _empresa_id)
     cargos = q.order_by(Job.created_at.desc()).all()
     empresas = db.query(Company).order_by(Company.name).all() if current_user.role == "superadmin" else []
     return templates.TemplateResponse(
         "index.html",
-        ctx(request, current_user, jobs=cargos, empresas=empresas, empresa_id=empresa_id),
+        ctx(request, current_user, jobs=cargos, empresas=empresas, empresa_id=_empresa_id),
     )
 
 
@@ -417,21 +422,28 @@ def pagina_inicial(
 def formulario_novo_cargo(
     request: Request,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    return templates.TemplateResponse("job_new.html", ctx(request, current_user))
+    empresas = db.query(Company).order_by(Company.name).all() if current_user.role == "superadmin" else []
+    return templates.TemplateResponse("job_new.html", ctx(request, current_user, empresas=empresas))
 
 
 @app.post("/cargos")
 def criar_cargo(
     name: str = Form(...),
     description: str = Form(...),
+    company_id: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role == "superadmin" and company_id:
+        _company_id = int(company_id)
+    else:
+        _company_id = current_user.company_id
     cargo = Job(
         name=name.strip(),
         description=description.strip(),
-        company_id=current_user.company_id,
+        company_id=_company_id,
     )
     db.add(cargo)
     db.commit()

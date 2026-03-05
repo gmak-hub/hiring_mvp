@@ -9,6 +9,18 @@
 </div>
 
 <form method="post" action="/cargos" class="form">
+  {% if user.role == 'superadmin' %}
+  <div class="form-group">
+    <label for="company_id">Empresa</label>
+    <select id="company_id" name="company_id" required
+            style="width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:0.55rem 0.75rem;color:var(--text);font-size:0.95rem;">
+      <option value="" disabled selected>Selecione a empresa...</option>
+      {% for empresa in empresas %}
+      <option value="{{ empresa.id }}">{{ empresa.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
   <div class="form-group">
     <label for="name">Nome do Cargo</label>
     <input type="text" id="name" name="name" required

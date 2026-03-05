@@ -7,7 +7,7 @@
   <div style="display:flex; gap:0.75rem; align-items:center;">
     {% if user.role == 'superadmin' %}
     <form method="get" action="/" style="margin:0;">
-      <select name="empresa_id" onchange="this.form.submit()"
+      <select name="empresa_id" onchange="this.value ? this.form.submit() : window.location.href='/'"
               style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.75rem;color:var(--text);font-size:0.875rem;cursor:pointer;">
         <option value="">Todas as empresas</option>
         {% for empresa in empresas %}
