@@ -35,18 +35,18 @@ SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "hiring-eval-secret-key-change-in-p
 # ── Startup ────────────────────────────────────────────────────────────────────
 
 def _seed_initial_data(db: Session) -> None:
-    """Create default company, assign orphan jobs, and ensure a superadmin exists."""
-    if db.query(Company).count() == 0:
-        default_company = Company(name="Empresa Padrão", status="active")
-        db.add(default_company)
+    """Ensure Teste company exists, assign orphan jobs to it, and ensure a superadmin exists."""
+    # Ensure "Teste" company exists
+    teste = db.query(Company).filter(Company.name == "Teste").first()
+    if not teste:
+        teste = Company(name="Teste", status="active")
+        db.add(teste)
         db.flush()
-        db.query(Job).filter(Job.company_id == None).update(  # noqa: E711
-            {"company_id": default_company.id}
-        )
 
-    if not db.query(Company).filter(Company.name == "Teste").first():
-        db.add(Company(name="Teste", status="active"))
-        db.flush()
+    # Assign any orphan jobs (no company) to "Teste"
+    db.query(Job).filter(Job.company_id == None).update(  # noqa: E711
+        {"company_id": teste.id}
+    )
 
     if not db.query(User).filter(User.role == "superadmin").first():
         superadmin = User(
