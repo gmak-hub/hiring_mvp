@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Criar Conta — HiringEval</title>
+  <title>Criar Conta — Cabine</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="login-wrapper">
     <div class="login-box" style="max-width:480px;">
-      <div class="login-logo">HiringEval</div>
+      <div class="login-logo">Cabine</div>
       <p class="login-subtitle">Crie sua empresa e conta de administrador</p>
 
       {% if errors %}
-        <div style="background:#fee2e2; border:1px solid #fecaca; color:#dc2626; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
+        <div style="background:#450a0a; border:1px solid #7f1d1d; color:#f87171; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
           {% for e in errors %}
             <div>• {{ e }}</div>
           {% endfor %}
@@ -102,7 +102,7 @@
         <a href="/login" style="color:var(--accent); font-weight:500;">Fazer login</a>
       </div>
 
-      <div style="margin-top:1rem; padding:0.75rem; background:#f8fafc; border-radius:6px; font-size:0.8125rem; color:var(--text-muted); text-align:center;">
+      <div style="margin-top:1rem; padding:0.75rem; background:var(--surface); border-radius:6px; font-size:0.8125rem; color:var(--text-muted); text-align:center;">
         Após o cadastro, sua conta aguardará aprovação do administrador antes de ter acesso.
       </div>
     </div>

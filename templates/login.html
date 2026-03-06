@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login — HiringEval</title>
+  <title>Login — Cabine</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="login-wrapper">
     <div class="login-box">
-      <div class="login-logo">HiringEval</div>
+      <div class="login-logo">Cabine</div>
       <p class="login-subtitle">Entre com suas credenciais para continuar</p>
 
       {% if error %}
@@ -17,7 +17,7 @@
       {% endif %}
 
       {% if msg == 'cadastro_enviado' %}
-        <div style="background:#dcfce7; border:1px solid #bbf7d0; color:#15803d; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
+        <div style="background:#052e16; border:1px solid #166534; color:#4ade80; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
           Cadastro enviado! Aguardando aprovação do administrador.
         </div>
       {% endif %}

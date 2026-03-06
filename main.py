@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
 
 # ── App setup ──────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="HiringEval", lifespan=lifespan)
+app = FastAPI(title="Cabine", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
