@@ -164,7 +164,7 @@
       <thead>
         <tr>
           <th>Nome</th>
-          <th>Usuário</th>
+          <th>Email</th>
           <th>Empresa</th>
           <th>Perfil</th>
           <th>Status</th>
@@ -175,7 +175,7 @@
         {% for u in usuarios %}
         <tr>
           <td style="font-weight:600; white-space:nowrap;">{{ u.name }}</td>
-          <td class="text-muted" style="font-size:0.8125rem;">{{ u.username }}</td>
+          <td class="text-muted" style="font-size:0.8125rem;">{{ u.email or '—' }}</td>
           <td style="font-size:0.8125rem;">
             {% if u.company %}
               <a href="/admin?empresa_id={{ u.company.id }}" style="color:var(--text-muted);">{{ u.company.name }}</a>

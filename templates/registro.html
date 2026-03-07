@@ -34,10 +34,10 @@
         </div>
 
         <div style="height:1px; background:var(--border); margin:1.25rem 0;"></div>
-        <p style="font-size:0.8125rem; color:var(--text-muted); margin-bottom:1rem;">Conta do administrador da empresa</p>
+        <p style="font-size:0.8125rem; color:var(--text-muted); margin-bottom:1rem;">Conta do administrador</p>
 
         <div class="form-group">
-          <label for="nome">Seu nome completo <span style="color:#dc2626;">*</span></label>
+          <label for="nome">Nome completo <span style="color:#dc2626;">*</span></label>
           <input
             type="text"
             id="nome"
@@ -49,15 +49,15 @@
         </div>
 
         <div class="form-group">
-          <label for="usuario">Usuário (login) <span style="color:#dc2626;">*</span></label>
+          <label for="email">Email <span style="color:#dc2626;">*</span></label>
           <input
-            type="text"
-            id="usuario"
-            name="usuario"
-            placeholder="Ex: maria.silva"
+            type="email"
+            id="email"
+            name="email"
+            placeholder="seu@email.com"
             required
-            autocomplete="username"
-            value="{{ form.usuario if form else '' }}"
+            autocomplete="email"
+            value="{{ form.email if form else '' }}"
           >
         </div>
 
@@ -92,7 +92,7 @@
 
         <div style="margin-top:1.5rem;">
           <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
-            Criar Conta e Empresa
+            Criar conta
           </button>
         </div>
       </form>
@@ -100,10 +100,6 @@
       <div style="text-align:center; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border); font-size:0.875rem; color:var(--text-muted);">
         Já tem conta?
         <a href="/login" style="color:var(--accent); font-weight:500;">Fazer login</a>
-      </div>
-
-      <div style="margin-top:1rem; padding:0.75rem; background:#f8fafc; border-radius:6px; font-size:0.8125rem; color:var(--text-muted); text-align:center;">
-        Após o cadastro, sua conta aguardará aprovação do administrador antes de ter acesso.
       </div>
     </div>
   </div>

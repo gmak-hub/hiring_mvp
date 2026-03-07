@@ -1,10 +1,11 @@
 import copy
 import json
 import os
+import secrets
 import tempfile
 import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -48,19 +49,24 @@ def _seed_initial_data(db: Session) -> None:
         {"company_id": teste.id}
     )
 
-    if not db.query(User).filter(User.role == "superadmin").first():
+    # One-time migration to email-based auth: delete all users and create new superadmin
+    gabriel = db.query(User).filter(User.email == "gmakdesiy@gmail.com").first()
+    if not gabriel:
+        db.query(User).delete()
+        db.flush()
         superadmin = User(
-            username="admin",
-            name="Super Admin",
-            password_hash=hash_password("admin123"),
+            email="gmakdesiy@gmail.com",
+            name="Gabriel Makdesi",
+            password_hash=hash_password("HiringEval2026!"),
             role="superadmin",
             status="active",
+            email_verified=True,
             company_id=None,
             is_active=True,
         )
         db.add(superadmin)
         print("=" * 60)
-        print("SUPERADMIN CRIADO  →  usuário: admin  |  senha: admin123")
+        print("SUPERADMIN CRIADO  →  email: gmakdesiy@gmail.com  |  senha: HiringEval2026!")
         print("Altere a senha após o primeiro login!")
         print("=" * 60)
 
@@ -139,17 +145,16 @@ def pagina_login(request: Request, msg: str = None):
 @app.post("/login")
 def fazer_login(
     request: Request,
-    empresa: str = Form(""),
-    usuario: str = Form(...),
+    email: str = Form(...),
     senha: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    user, reason = authenticate_user(db, usuario, senha)
+    user, reason = authenticate_user(db, email, senha)
 
     if user is None:
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "Usuário ou senha incorretos"},
+            {"request": request, "error": "Email ou senha incorretos"},
             status_code=401,
         )
 
@@ -182,13 +187,7 @@ def fazer_login(
         if user.company.status != "active":
             return templates.TemplateResponse(
                 "login.html",
-                {"request": request, "error": "Empresa pendente de aprovação ou bloqueada."},
-                status_code=401,
-            )
-        if empresa.strip().lower() != user.company.name.lower():
-            return templates.TemplateResponse(
-                "login.html",
-                {"request": request, "error": "Empresa não corresponde a este usuário."},
+                {"request": request, "error": "Empresa bloqueada. Entre em contato com o administrador."},
                 status_code=401,
             )
 
@@ -201,6 +200,93 @@ def fazer_login(
 def fazer_logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/login", status_code=303)
+
+
+# ── Password recovery ──────────────────────────────────────────────────────────
+
+_reset_tokens: dict[str, tuple[str, datetime]] = {}  # token → (email, expires_at)
+
+
+@app.get("/esqueci-senha", response_class=HTMLResponse)
+def pagina_esqueci_senha(request: Request):
+    if request.session.get("user_id"):
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse("esqueci_senha.html", {"request": request})
+
+
+@app.post("/esqueci-senha")
+def processar_esqueci_senha(
+    request: Request,
+    email: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    email_clean = email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+
+    if user and user.status == "active":
+        token = secrets.token_urlsafe(32)
+        _reset_tokens[token] = (email_clean, datetime.utcnow() + timedelta(hours=1))
+        reset_url = f"/redefinir-senha?token={token}"
+        print("=" * 60)
+        print(f"[RESET SENHA] URL para {email_clean}:")
+        print(f"  {reset_url}")
+        print("=" * 60)
+
+    # Always show success to prevent email enumeration
+    return templates.TemplateResponse(
+        "esqueci_senha.html",
+        {"request": request, "enviado": True},
+    )
+
+
+@app.get("/redefinir-senha", response_class=HTMLResponse)
+def pagina_redefinir_senha(request: Request, token: str = ""):
+    if request.session.get("user_id"):
+        return RedirectResponse(url="/", status_code=303)
+    entry = _reset_tokens.get(token)
+    valido = entry is not None and datetime.utcnow() < entry[1]
+    return templates.TemplateResponse(
+        "redefinir_senha.html",
+        {"request": request, "token": token, "valido": valido},
+    )
+
+
+@app.post("/redefinir-senha")
+def processar_redefinir_senha(
+    request: Request,
+    token: str = Form(...),
+    nova_senha: str = Form(...),
+    confirmar_nova_senha: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    entry = _reset_tokens.get(token)
+    if not entry or datetime.utcnow() >= entry[1]:
+        return templates.TemplateResponse(
+            "redefinir_senha.html",
+            {"request": request, "token": token, "valido": False},
+        )
+
+    email_clean, _ = entry
+    errors = []
+    if len(nova_senha) < 6:
+        errors.append("A senha deve ter pelo menos 6 caracteres.")
+    if nova_senha != confirmar_nova_senha:
+        errors.append("As senhas não coincidem.")
+
+    if errors:
+        return templates.TemplateResponse(
+            "redefinir_senha.html",
+            {"request": request, "token": token, "valido": True, "errors": errors},
+            status_code=422,
+        )
+
+    user = db.query(User).filter(User.email == email_clean).first()
+    if user:
+        user.password_hash = hash_password(nova_senha)
+        db.commit()
+
+    _reset_tokens.pop(token, None)
+    return RedirectResponse(url="/login?msg=senha_redefinida", status_code=303)
 
 
 # ── Public registration ────────────────────────────────────────────────────────
@@ -217,12 +303,13 @@ def fazer_registro(
     request: Request,
     nome_empresa: str = Form(...),
     nome: str = Form(...),
-    usuario: str = Form(...),
+    email: str = Form(...),
     senha: str = Form(...),
     confirmar_senha: str = Form(...),
     db: Session = Depends(get_db),
 ):
     errors = []
+    email_clean = email.strip().lower()
 
     if senha != confirmar_senha:
         errors.append("As senhas não coincidem.")
@@ -230,37 +317,41 @@ def fazer_registro(
     if len(senha) < 6:
         errors.append("A senha deve ter pelo menos 6 caracteres.")
 
-    if db.query(User).filter(User.username == usuario.strip()).first():
-        errors.append(f'O usuário "{usuario.strip()}" já está em uso.')
+    if db.query(User).filter(User.email == email_clean).first():
+        errors.append("Este email já está cadastrado.")
 
     if errors:
         return templates.TemplateResponse(
             "registro.html",
             {"request": request, "errors": errors,
-             "form": {"nome_empresa": nome_empresa, "nome": nome, "usuario": usuario}},
+             "form": {"nome_empresa": nome_empresa, "nome": nome, "email": email}},
             status_code=422,
         )
 
-    # Find existing company or create a new pending one
+    # Create new company (active — no approval required)
     company = db.query(Company).filter(Company.name.ilike(nome_empresa.strip())).first()
     if company is None:
-        company = Company(name=nome_empresa.strip(), status="pending")
+        company = Company(name=nome_empresa.strip(), status="active")
         db.add(company)
         db.flush()
 
     new_user = User(
         company_id=company.id,
-        username=usuario.strip(),
+        email=email_clean,
         name=nome.strip(),
         password_hash=hash_password(senha),
         role="admin",
-        status="pending",
-        is_active=False,
+        status="active",
+        email_verified=True,
+        is_active=True,
     )
     db.add(new_user)
     db.commit()
+    db.refresh(new_user)
 
-    return RedirectResponse(url="/login?msg=cadastro_enviado", status_code=303)
+    # Auto-login after registration
+    request.session["user_id"] = new_user.id
+    return RedirectResponse(url="/", status_code=303)
 
 
 # ── Account management ─────────────────────────────────────────────────────────
@@ -991,7 +1082,7 @@ def pagina_usuarios_empresa(
 @app.post("/empresa/usuarios")
 def criar_usuario_empresa(
     nome: str = Form(...),
-    usuario: str = Form(...),
+    email: str = Form(...),
     senha: str = Form(...),
     perfil: str = Form(...),
     current_user: User = Depends(require_admin),
@@ -1003,14 +1094,16 @@ def criar_usuario_empresa(
     if perfil not in ("avaliador", "admin"):
         perfil = "avaliador"
 
-    if not db.query(User).filter(User.username == usuario.strip()).first():
+    email_clean = email.strip().lower()
+    if not db.query(User).filter(User.email == email_clean).first():
         new_user = User(
             company_id=current_user.company_id,
-            username=usuario.strip(),
+            email=email_clean,
             name=nome.strip(),
             password_hash=hash_password(senha),
             role=perfil,
             status="active",
+            email_verified=True,
             is_active=True,
         )
         db.add(new_user)

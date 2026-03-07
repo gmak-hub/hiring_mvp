@@ -22,8 +22,8 @@
         <input type="text" id="nome" name="nome" placeholder="Ex: Maria Silva" required>
       </div>
       <div class="form-group" style="margin-bottom:0;">
-        <label for="usuario">Usuário (login)</label>
-        <input type="text" id="usuario" name="usuario" placeholder="Ex: maria.silva" required>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="maria@empresa.com" required autocomplete="off">
       </div>
       <div class="form-group" style="margin-bottom:0;">
         <label for="senha">Senha</label>
@@ -60,7 +60,7 @@
       <thead>
         <tr>
           <th>Nome</th>
-          <th>Usuário</th>
+          <th>Email</th>
           <th>Perfil</th>
           <th>Status</th>
           <th>Ações</th>
@@ -70,7 +70,7 @@
         {% for u in usuarios %}
         <tr>
           <td style="font-weight:600;">{{ u.name }}</td>
-          <td class="text-muted" style="font-size:0.8125rem;">{{ u.username }}</td>
+          <td class="text-muted" style="font-size:0.8125rem;">{{ u.email or '—' }}</td>
           <td>
             {% if u.role == 'admin' %}
               <span class="badge badge-indigo">Admin</span>

@@ -18,18 +18,18 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def authenticate_user(
-    db: Session, username: str, password: str
+    db: Session, email: str, password: str
 ) -> Tuple[Optional[User], str]:
     """
-    Authenticate a user by username and password.
+    Authenticate a user by email and password.
 
     Returns (user, reason) where reason is one of:
-        "ok"                  — credentials correct, account active
-        "invalid_credentials" — wrong username or password
+        "active"              — credentials correct, account active
+        "invalid_credentials" — wrong email or password
         "pending"             — account awaiting approval
         "blocked"             — account blocked
     """
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.email == email.strip().lower()).first()
     if not user or not verify_password(password, user.password_hash):
         return None, "invalid_credentials"
     return user, user.status

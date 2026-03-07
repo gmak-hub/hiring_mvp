@@ -74,7 +74,9 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)  # null for superadmin
-    username = Column(String(255), nullable=False, unique=True)
+    username = Column(String(255), nullable=True, unique=True)  # deprecated — use email
+    email = Column(String(255), nullable=True, unique=True, index=True)
+    email_verified = Column(Boolean, default=True)
     name = Column(String(255), nullable=False)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="avaliador")  # avaliador | admin | superadmin
@@ -176,6 +178,16 @@ def _migrate_db():
                 conn.execute(text(
                     "UPDATE users SET status = CASE WHEN is_active = TRUE THEN 'active' ELSE 'blocked' END"
                 ))
+            if "email" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(255)"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email) WHERE email IS NOT NULL"))
+            if "email_verified" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE"))
+            # Make username nullable if it still has a NOT NULL constraint
+            try:
+                conn.execute(text("ALTER TABLE users ALTER COLUMN username DROP NOT NULL"))
+            except Exception:
+                pass  # already nullable
 
         conn.commit()
 
