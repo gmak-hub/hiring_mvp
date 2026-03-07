@@ -11,6 +11,7 @@ Error hierarchy:
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -20,12 +21,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MODELO = "claude-sonnet-4-6"
-
-MAPA_CONFIANCA = {
-    "baixo": "Baixo", "low": "Baixo",
-    "médio": "Médio", "medio": "Médio", "medium": "Médio",
-    "alto": "Alto", "high": "Alto",
-}
 
 # Palavras que indicam critério técnico/hard skill — proibidas no scorecard comportamental
 _PALAVRAS_TECNICAS = frozenset({
@@ -237,6 +232,14 @@ def _numerar_linhas(transcricao: str) -> str:
     """Add line numbers to each line of a transcript."""
     linhas = transcricao.strip().split("\n")
     return "\n".join(f"[{i + 1}] {linha}" for i, linha in enumerate(linhas))
+
+
+def _ordenar_evidencias(evidencias: list[str]) -> list[str]:
+    """Sort evidence citations by their transcript line number ([N] 'quote')."""
+    def _linha(ev: str) -> int:
+        m = re.match(r"\[(\d+)\]", ev.strip())
+        return int(m.group(1)) if m else 999999
+    return sorted(evidencias, key=_linha)
 
 
 def _normalizar_pesos_inplace(criterios: list) -> None:
@@ -590,7 +593,6 @@ Rubrica:
 REGRAS:
 - Atribua nota 1–5 com base ESTRITAMENTE na definição da rubrica.
 - contribuicao = (nota × peso) / 5
-- confianca: "Baixo" se nenhuma evidência; "Médio" se evidência parcial; "Alto" se evidência clara e consistente.
 - evidencias: lista de CITAÇÕES DIRETAS da transcrição com número de linha: "[LINHA] 'citação exata'"
 - lacunas: o que NÃO foi demonstrado ou estava ausente
 - NUNCA invente evidências. Cite apenas linhas que existem na transcrição.
@@ -601,7 +603,6 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
   "nota": 3,
   "peso": {peso_c},
   "contribuicao": 12.0,
-  "confianca": "Médio",
   "evidencias": ["[12] 'citação exata da linha 12'"],
   "lacunas": "Não demonstrou X"
 }}"""
@@ -614,11 +615,10 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
     except json.JSONDecodeError as e:
         raise AIParsingError(f"JSON inválido ao avaliar critério único: {e}") from e
 
-    val = dados.get("confianca", "").lower().strip()
-    dados["confianca"] = MAPA_CONFIANCA.get(val, "Baixo")
     dados["criterio"] = nome_c
     dados["peso"] = peso_c
     dados["contribuicao"] = round((dados["nota"] * peso_c) / 5, 1)
+    dados["evidencias"] = _ordenar_evidencias(dados.get("evidencias") or [])
     return dados
 
 
@@ -648,10 +648,9 @@ Para CADA um dos 5 critérios acima, produza uma avaliação completa.
 REGRAS:
 - Atribua nota 1–5 com base ESTRITAMENTE na definição da rubrica.
 - contribuicao = (nota × peso) / 5  [máximo por critério = peso; máximo total = 100]
-- confianca: "Baixo" se nenhuma ou mínima evidência; "Médio" se evidência parcial; "Alto" se evidência clara e consistente.
 - evidencias: lista de CITAÇÕES DIRETAS da transcrição com número de linha, no formato: "[LINHA] 'citação exata'"
 - lacunas: declare explicitamente o que NÃO foi demonstrado ou qual evidência estava ausente ou insuficiente.
-- Se NÃO houver evidência relevante para um critério: nota=2, confianca="Baixo", evidencias=[], lacunas="[descreva o que era esperado, mas não foi encontrado na transcrição]"
+- Se NÃO houver evidência relevante para um critério: nota=2, evidencias=[], lacunas="[descreva o que era esperado, mas não foi encontrado na transcrição]"
 - NUNCA invente evidências. Cite apenas linhas que existem na transcrição.
 - nota_final = soma de todos os valores de contribuicao (faixa teórica: 20–100)
 
@@ -663,7 +662,6 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
       "nota": 3,
       "peso": 20,
       "contribuicao": 12.0,
-      "confianca": "Médio",
       "evidencias": ["[12] 'citação exata da linha 12'"],
       "lacunas": "Não demonstrou X nem Y"
     }}
@@ -680,11 +678,10 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
         print(f"[AI PARSING ERROR] Resposta bruta da avaliação:\n{texto}")
         raise AIParsingError(f"A IA retornou JSON inválido na avaliação: {e}") from e
 
-    # Normalize confidence labels and recalculate weighted contributions server-side
+    # Recalculate weighted contributions server-side and sort evidence chronologically
     for av in dados["avaliacoes"]:
-        val = av.get("confianca", "").lower().strip()
-        av["confianca"] = MAPA_CONFIANCA.get(val, "Baixo")
         av["contribuicao"] = round((av["nota"] * av["peso"]) / 5, 1)
+        av["evidencias"] = _ordenar_evidencias(av.get("evidencias") or [])
 
     nota_final = sum(av["contribuicao"] for av in dados["avaliacoes"])
     dados["nota_final"] = round(nota_final, 1)

@@ -48,7 +48,6 @@
             <th>Peso</th>
             <th class="th-center">Nota</th>
             <th class="th-center">Contribuição</th>
-            <th class="th-center">Confiança</th>
           </tr>
         </thead>
         <tbody>
@@ -58,15 +57,11 @@
             <td><span class="weight-pill">{{ av.peso }}%</span></td>
             <td class="td-center"><span class="score score-{{ av.nota }}">{{ av.nota }}</span></td>
             <td class="td-center td-contribution">{{ av.contribuicao | round(1) }}</td>
-            <td class="td-center">
-              <span class="confidence confidence-{% if av.confianca == 'Alto' %}alto{% elif av.confianca == 'Médio' %}medio{% else %}baixo{% endif %}">{{ av.confianca }}</span>
-            </td>
           </tr>
           {% endfor %}
           <tr class="total-row">
             <td colspan="3"><strong>Nota Final</strong></td>
             <td class="td-center td-contribution"><strong>{{ candidate.final_score | round(1) }}</strong></td>
-            <td></td>
           </tr>
         </tbody>
       </table>
@@ -83,7 +78,6 @@
       <div class="criteria-meta">
         <span class="weight-pill">{{ av.peso }}%</span>
         <span class="score score-{{ av.nota }}">{{ av.nota }}</span>
-        <span class="confidence confidence-{% if av.confianca == 'Alto' %}alto{% elif av.confianca == 'Médio' %}medio{% else %}baixo{% endif %}">{{ av.confianca }}</span>
         <span class="contribution-badge">+{{ av.contribuicao | round(1) }} pts</span>
       </div>
     </div>
@@ -101,7 +95,7 @@
       {% endif %}
 
       {% if av.lacunas %}
-        <div style="margin-top: 0.875rem;">
+        <div class="gaps-section">
           <div class="gaps-label">Lacunas</div>
           <div class="gaps-block">{{ av.lacunas }}</div>
         </div>
