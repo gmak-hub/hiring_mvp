@@ -283,6 +283,61 @@ table tr:hover td { background: #fafafa; }
 
 .criterion-name { font-weight: 600; white-space: nowrap; }
 
+/* ── Comparison table (Painel Comparativo) ──────────── */
+/*
+ * table-layout: fixed  →  all score columns share equal width, regardless of
+ *                          criterion name length or candidate count.
+ *
+ * vertical-align: bottom on th  →  all headers pin to the bottom edge of the
+ *                                   header row, so the peso % always appears at
+ *                                   the same vertical position even when names
+ *                                   wrap to different line counts.
+ *
+ * vertical-align: middle on td  →  score circles are always centered in the
+ *                                   cell, overriding the global "top" default.
+ */
+.comparison-table {
+  table-layout: fixed;
+}
+
+.comparison-table th {
+  white-space: normal;        /* override global nowrap so names can wrap */
+  vertical-align: bottom;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.comparison-table th:first-child {
+  text-align: left;
+  width: 22%;
+  min-width: 110px;
+  padding-left: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comparison-table td {
+  vertical-align: middle;     /* override global top-align */
+  padding: 0.625rem 0.5rem;
+  text-align: center;
+}
+
+.comparison-table td:first-child {
+  text-align: left;
+  padding-left: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comparison-table .th-weight {
+  display: block;
+  margin-top: 0.25rem;
+}
+
 .td-rubric {
   font-size: 0.8rem;
   color: #475569;
