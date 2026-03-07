@@ -211,12 +211,19 @@
             </td>
             {% if candidato.evaluation %}
               {% for c in job.scorecard.criterios %}
-                {% set ns = namespace(val=0) %}
+                {% set ns = namespace(val=0, sem_ev=false) %}
                 {% for av in candidato.evaluation.avaliacoes %}
-                  {% if av.criterio == c.nome %}{% set ns.val = av.nota %}{% endif %}
+                  {% if av.criterio == c.nome %}
+                    {% set ns.sem_ev = av.sem_evidencia if av.sem_evidencia else false %}
+                    {% if not ns.sem_ev %}{% set ns.val = av.nota %}{% endif %}
+                  {% endif %}
                 {% endfor %}
                 <td class="td-center">
-                  <span class="score score-{{ ns.val }}">{{ ns.val }}</span>
+                  {% if ns.sem_ev %}
+                    <span style="color:var(--text-muted); font-size:0.8125rem;">—</span>
+                  {% else %}
+                    <span class="score score-{{ ns.val }}">{{ ns.val }}</span>
+                  {% endif %}
                 </td>
               {% endfor %}
               <td class="td-center td-final">{{ candidato.final_score | round(1) }}</td>

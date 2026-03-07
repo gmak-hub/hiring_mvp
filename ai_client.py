@@ -569,8 +569,9 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
 def avaliar_criterio_unico(criterio: dict, nome_candidato: str, transcricao: str) -> dict:
     """Evaluate a single criterion for a candidate given their transcript.
 
-    Returns one avaliacao dict in the same format as the entries inside
-    avaliar_candidato's "avaliacoes" list.
+    Returns one avaliacao dict. Two possible shapes:
+    - Scored:   {"criterio", "nota", "peso", "contribuicao", "evidencias", "lacunas"}
+    - Unscored: {"criterio", "peso", "sem_evidencia": True, "motivo", "evidencia_esperada"}
     Raises AIParsingError if the response is invalid.
     """
     numerada = _numerar_linhas(transcricao)
@@ -590,22 +591,40 @@ Rubrica:
 === TRANSCRIÇÃO (com número de linhas) ===
 {numerada}
 
-REGRAS:
-- Atribua nota 1–5 com base ESTRITAMENTE na definição da rubrica.
-- contribuicao = (nota × peso) / 5
-- evidencias: lista de CITAÇÕES DIRETAS da transcrição com número de linha: "[LINHA] 'citação exata'"
-- lacunas: o que NÃO foi demonstrado ou estava ausente
-- NUNCA invente evidências. Cite apenas linhas que existem na transcrição.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Retorne APENAS JSON válido (sem markdown, sem explicação):
+PASSO 1 — Verifique se há evidência real na transcrição para este critério.
+Procure falas do candidato que demonstrem diretamente o comportamento descrito na rubrica.
+
+SE houver evidência suficiente → avalie com nota 1–5 e retorne o formato A.
+SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o formato B.
+
+REGRA CRÍTICA: Ausência de evidência ≠ desempenho ruim.
+Não invente contexto. Não assuma coisas não ditas na transcrição.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMATO A — com evidência (use quando há base na transcrição para avaliar):
 {{
   "criterio": "{nome_c}",
   "nota": 3,
   "peso": {peso_c},
-  "contribuicao": 12.0,
+  "contribuicao": {round(3 * peso_c / 5, 1)},
   "evidencias": ["[12] 'citação exata da linha 12'"],
-  "lacunas": "Não demonstrou X"
-}}"""
+  "lacunas": "O que não foi demonstrado ou estava ausente"
+}}
+
+FORMATO B — sem evidência (use quando a transcrição não permite avaliar este critério):
+{{
+  "criterio": "{nome_c}",
+  "peso": {peso_c},
+  "sem_evidencia": true,
+  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
+  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+}}
+
+Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente um dos dois formatos acima."""
 
     texto = _chamar_api(prompt, max_tokens=1024)
 
@@ -617,8 +636,16 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
 
     dados["criterio"] = nome_c
     dados["peso"] = peso_c
-    dados["contribuicao"] = round((dados["nota"] * peso_c) / 5, 1)
-    dados["evidencias"] = _ordenar_evidencias(dados.get("evidencias") or [])
+
+    if dados.get("sem_evidencia"):
+        dados.pop("nota", None)
+        dados.pop("contribuicao", None)
+        dados.pop("evidencias", None)
+        dados.pop("lacunas", None)
+    else:
+        dados["contribuicao"] = round((dados["nota"] * peso_c) / 5, 1)
+        dados["evidencias"] = _ordenar_evidencias(dados.get("evidencias") or [])
+
     return dados
 
 
@@ -643,30 +670,56 @@ Candidato: {nome_candidato}
 === TRANSCRIÇÃO (com número de linhas) ===
 {numerada}
 
-Para CADA um dos 5 critérios acima, produza uma avaliação completa.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES — LEIA COM ATENÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-REGRAS:
-- Atribua nota 1–5 com base ESTRITAMENTE na definição da rubrica.
-- contribuicao = (nota × peso) / 5  [máximo por critério = peso; máximo total = 100]
-- evidencias: lista de CITAÇÕES DIRETAS da transcrição com número de linha, no formato: "[LINHA] 'citação exata'"
-- lacunas: declare explicitamente o que NÃO foi demonstrado ou qual evidência estava ausente ou insuficiente.
-- Se NÃO houver evidência relevante para um critério: nota=2, evidencias=[], lacunas="[descreva o que era esperado, mas não foi encontrado na transcrição]"
-- NUNCA invente evidências. Cite apenas linhas que existem na transcrição.
-- nota_final = soma de todos os valores de contribuicao (faixa teórica: 20–100)
+Para CADA critério do scorecard, siga este processo:
+
+PASSO 1 — Verifique se há evidência real na transcrição.
+Procure falas do candidato que demonstrem diretamente o comportamento avaliado naquele critério.
+
+SE houver evidência suficiente → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
+SE NÃO houver evidência suficiente → NÃO atribua nota (use o objeto "sem evidência").
+
+REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
+Não invente contexto. Não assuma comportamentos não descritos na transcrição.
+Só cite linhas que realmente existem na transcrição.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMATOS DOS OBJETOS DE AVALIAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Objeto COM nota (quando há evidência para avaliar):
+{{
+  "criterio": "NomeDoCriterio",
+  "nota": 3,
+  "peso": 20,
+  "contribuicao": 12.0,
+  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "lacunas": "O que não foi demonstrado"
+}}
+
+Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
+{{
+  "criterio": "NomeDoCriterio",
+  "peso": 20,
+  "sem_evidencia": true,
+  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
+  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+}}
+
+Regras adicionais para objetos COM nota:
+- nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
+- contribuicao = (nota × peso) / 5
+- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- lacunas: o que ficou ausente ou não foi demonstrado
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {{
   "avaliacoes": [
-    {{
-      "criterio": "NomeDoCriterio",
-      "nota": 3,
-      "peso": 20,
-      "contribuicao": 12.0,
-      "evidencias": ["[12] 'citação exata da linha 12'"],
-      "lacunas": "Não demonstrou X nem Y"
-    }}
-  ],
-  "nota_final": 64.0
+    {{ objeto com nota OU sem evidência para cada critério }}
+  ]
 }}"""
 
     texto = _chamar_api(prompt, max_tokens=6144)
@@ -678,12 +731,26 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
         print(f"[AI PARSING ERROR] Resposta bruta da avaliação:\n{texto}")
         raise AIParsingError(f"A IA retornou JSON inválido na avaliação: {e}") from e
 
-    # Recalculate weighted contributions server-side and sort evidence chronologically
+    # Server-side: recalculate contributions and sort evidence; skip sem_evidencia entries
     for av in dados["avaliacoes"]:
-        av["contribuicao"] = round((av["nota"] * av["peso"]) / 5, 1)
-        av["evidencias"] = _ordenar_evidencias(av.get("evidencias") or [])
+        if av.get("sem_evidencia"):
+            av.pop("nota", None)
+            av.pop("contribuicao", None)
+            av.pop("evidencias", None)
+            av.pop("lacunas", None)
+        else:
+            av["contribuicao"] = round((av["nota"] * av["peso"]) / 5, 1)
+            av["evidencias"] = _ordenar_evidencias(av.get("evidencias") or [])
 
-    nota_final = sum(av["contribuicao"] for av in dados["avaliacoes"])
-    dados["nota_final"] = round(nota_final, 1)
+    # Normalize nota_final to 0–100 using only scored criteria
+    scored = [av for av in dados["avaliacoes"] if not av.get("sem_evidencia")]
+    total_peso_scored = sum(av["peso"] for av in scored)
+    if total_peso_scored > 0:
+        nota_final = round(sum(av["contribuicao"] for av in scored) / total_peso_scored * 100, 1)
+    else:
+        nota_final = 0.0
+    dados["nota_final"] = nota_final
+    dados["criterios_avaliados"] = len(scored)
+    dados["criterios_total"] = len(dados["avaliacoes"])
 
     return dados

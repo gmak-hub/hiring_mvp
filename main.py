@@ -405,10 +405,15 @@ def _recalcular_notas_candidatos(cargo: "Job", novo_scorecard: dict) -> None:
             novo_peso = pesos_por_nome.get(av["criterio"])
             if novo_peso is not None:
                 av["peso"] = novo_peso
-                av["contribuicao"] = round((av["nota"] * novo_peso) / 5, 1)
+                if not av.get("sem_evidencia"):
+                    av["contribuicao"] = round((av["nota"] * novo_peso) / 5, 1)
+        scored = [av for av in nova_eval["avaliacoes"] if not av.get("sem_evidencia")]
+        total_peso_scored = sum(av["peso"] for av in scored)
         nova_eval["nota_final"] = round(
-            sum(av["contribuicao"] for av in nova_eval["avaliacoes"]), 1
-        )
+            sum(av["contribuicao"] for av in scored) / total_peso_scored * 100, 1
+        ) if total_peso_scored > 0 else 0.0
+        nova_eval["criterios_avaliados"] = len(scored)
+        nova_eval["criterios_total"] = len(nova_eval["avaliacoes"])
         candidato.evaluation = nova_eval
         candidato.final_score = nova_eval["nota_final"]
         flag_modified(candidato, "evaluation")
@@ -448,9 +453,13 @@ def _reavaliar_criterios_alterados(cargo: "Job", scorecard: dict, pendentes: lis
                     f"criterio={novo_criterio['nome']}: {type(e).__name__}: {e}"
                 )
                 print(traceback.format_exc())
+        scored = [av for av in nova_eval["avaliacoes"] if not av.get("sem_evidencia")]
+        total_peso_scored = sum(av["peso"] for av in scored)
         nova_eval["nota_final"] = round(
-            sum(av["contribuicao"] for av in nova_eval["avaliacoes"]), 1
-        )
+            sum(av["contribuicao"] for av in scored) / total_peso_scored * 100, 1
+        ) if total_peso_scored > 0 else 0.0
+        nova_eval["criterios_avaliados"] = len(scored)
+        nova_eval["criterios_total"] = len(nova_eval["avaliacoes"])
         candidato.evaluation = nova_eval
         candidato.final_score = nova_eval["nota_final"]
         flag_modified(candidato, "evaluation")

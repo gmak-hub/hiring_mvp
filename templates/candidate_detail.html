@@ -21,6 +21,11 @@
           {% else %}score-low{% endif %}
         ">{{ fs | round(1) }}</span>
         <span class="final-score-label">/ 100</span>
+        {% if candidate.evaluation.criterios_avaliados is defined and candidate.evaluation.criterios_avaliados < candidate.evaluation.criterios_total %}
+          <span style="font-size:0.75rem; color:var(--text-muted); margin-left:0.5rem;">
+            ({{ candidate.evaluation.criterios_avaliados }} de {{ candidate.evaluation.criterios_total }} critérios)
+          </span>
+        {% endif %}
       </div>
     {% endif %}
     {% if user.role in ('admin', 'superadmin') %}
@@ -52,15 +57,33 @@
         </thead>
         <tbody>
           {% for av in candidate.evaluation.avaliacoes %}
+          {% if av.sem_evidencia %}
+          <tr>
+            <td class="criterion-name">{{ av.criterio }}</td>
+            <td><span class="weight-pill">{{ av.peso }}%</span></td>
+            <td class="td-center">
+              <span style="font-size:0.75rem; color:#64748b; background:#f1f5f9; padding:0.2rem 0.5rem; border-radius:4px; white-space:nowrap;">sem evidência</span>
+            </td>
+            <td class="td-center" style="color:var(--text-muted);">—</td>
+          </tr>
+          {% else %}
           <tr>
             <td class="criterion-name">{{ av.criterio }}</td>
             <td><span class="weight-pill">{{ av.peso }}%</span></td>
             <td class="td-center"><span class="score score-{{ av.nota }}">{{ av.nota }}</span></td>
             <td class="td-center td-contribution">{{ av.contribuicao | round(1) }}</td>
           </tr>
+          {% endif %}
           {% endfor %}
           <tr class="total-row">
-            <td colspan="3"><strong>Nota Final</strong></td>
+            <td colspan="3">
+              <strong>Nota Final</strong>
+              {% if candidate.evaluation.criterios_avaliados is defined and candidate.evaluation.criterios_avaliados < candidate.evaluation.criterios_total %}
+                <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted); margin-left:0.5rem;">
+                  · calculada sobre {{ candidate.evaluation.criterios_avaliados }} de {{ candidate.evaluation.criterios_total }} critérios
+                </span>
+              {% endif %}
+            </td>
             <td class="td-center td-contribution"><strong>{{ candidate.final_score | round(1) }}</strong></td>
           </tr>
         </tbody>
@@ -72,6 +95,32 @@
   <div class="section-title" style="margin-bottom: 1rem;">Detalhamento por Critério</div>
 
   {% for av in candidate.evaluation.avaliacoes %}
+
+  {% if av.sem_evidencia %}
+  <div class="criteria-block" style="border-left: 3px solid #e2e8f0;">
+    <div class="criteria-header">
+      <span class="criteria-name">{{ av.criterio }}</span>
+      <div class="criteria-meta">
+        <span class="weight-pill">{{ av.peso }}%</span>
+        <span style="font-size:0.75rem; color:#64748b; background:#f1f5f9; border:1px solid #e2e8f0; padding:0.2rem 0.6rem; border-radius:4px;">
+          Evidência insuficiente
+        </span>
+      </div>
+    </div>
+    <div class="criteria-body">
+      <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:{% if av.evidencia_esperada %}0.75rem{% else %}0{% endif %};">
+        {{ av.motivo }}
+      </p>
+      {% if av.evidencia_esperada %}
+      <div class="gaps-section">
+        <div class="gaps-label">Que tipo de evidência seria esperada</div>
+        <div class="gaps-block">{{ av.evidencia_esperada }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% else %}
   <div class="criteria-block">
     <div class="criteria-header">
       <span class="criteria-name">{{ av.criterio }}</span>
@@ -103,6 +152,8 @@
 
     </div>
   </div>
+  {% endif %}
+
   {% endfor %}
 
 {% else %}
