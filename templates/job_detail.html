@@ -193,8 +193,8 @@
           <tr>
             <th>Candidato</th>
             {% for c in job.scorecard.criterios %}
-            <th class="th-center">
-              {{ c.nome }}<br>
+            <th class="th-center" title="{{ c.nome }}">
+              <span class="crit-name">{{ c.nome }}</span>
               <span class="th-weight">{{ c.peso }}%</span>
             </th>
             {% endfor %}

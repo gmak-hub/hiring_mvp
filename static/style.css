@@ -283,44 +283,54 @@ table tr:hover td { background: #fafafa; }
 
 .criterion-name { font-weight: 600; white-space: nowrap; }
 
-/* ── Comparison table (Painel Comparativo) ──────────── */
+/* ── Comparison table (Comparação de Candidatos) ────── */
 /*
- * table-layout: fixed  →  all score columns share equal width, regardless of
- *                          criterion name length or candidate count.
+ * table-layout: fixed  →  column widths are assigned by the browser upfront
+ *                          and never recalculated based on cell content.
+ *                          Criteria columns share remaining space equally.
  *
- * vertical-align: bottom on th  →  all headers pin to the bottom edge of the
- *                                   header row, so the peso % always appears at
- *                                   the same vertical position even when names
- *                                   wrap to different line counts.
+ * .crit-name display:block + overflow:hidden + text-overflow:ellipsis  →
+ *   criterion names truncate cleanly at the column boundary.
+ *   The native title="" attribute on <th> provides the full name on hover.
  *
- * vertical-align: middle on td  →  score circles are always centered in the
- *                                   cell, overriding the global "top" default.
+ * th:last-child / td:last-child  →  Nota Final column has a fixed width so it
+ *   never expands or shrinks with different score values.
  */
 .comparison-table {
   table-layout: fixed;
 }
 
+/* ── Column widths ── */
+.comparison-table th:first-child,
+.comparison-table td:first-child {
+  width: 22%;
+  min-width: 110px;
+}
+
+.comparison-table th:last-child,
+.comparison-table td:last-child {
+  width: 9%;
+  min-width: 64px;
+}
+/* Criteria columns fill the remaining 69% equally (no explicit width needed
+   with table-layout:fixed — the browser divides the remainder evenly). */
+
+/* ── Header cells ── */
 .comparison-table th {
-  white-space: normal;        /* override global nowrap so names can wrap */
-  vertical-align: bottom;
+  vertical-align: bottom;     /* peso % always at the same baseline */
   padding: 0.75rem 0.5rem;
   text-align: center;
-  line-height: 1.35;
-  word-break: break-word;
+  white-space: normal;        /* override global nowrap — truncation handled by .crit-name */
 }
 
 .comparison-table th:first-child {
   text-align: left;
-  width: 22%;
-  min-width: 110px;
   padding-left: 0.875rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
+/* ── Data cells ── */
 .comparison-table td {
-  vertical-align: middle;     /* override global top-align */
+  vertical-align: middle;     /* override global top — score circles stay centered */
   padding: 0.625rem 0.5rem;
   text-align: center;
 }
@@ -333,6 +343,15 @@ table tr:hover td { background: #fafafa; }
   text-overflow: ellipsis;
 }
 
+/* ── Criterion name — truncate, no mid-word breaks, tooltip via title="" ── */
+.comparison-table .crit-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Criterion weight — sits below the name ── */
 .comparison-table .th-weight {
   display: block;
   margin-top: 0.25rem;
