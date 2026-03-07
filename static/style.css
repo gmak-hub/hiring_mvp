@@ -782,6 +782,7 @@ table tr:hover td { background: #fafafa; }
 }
 
 .login-box .form-group input[type="text"],
+.login-box .form-group input[type="email"],
 .login-box .form-group input[type="password"] {
   width: 100%;
   padding: 0.5rem 0.75rem;

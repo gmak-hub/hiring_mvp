@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Criar nova senha — HiringEval</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-box">
+      <div class="login-logo">HiringEval</div>
+      <p class="login-subtitle">Criar nova senha</p>
+
+      <div style="background:#fef9c3; border:1px solid #fde047; border-radius:6px; padding:0.75rem 0.875rem; font-size:0.875rem; color:#854d0e; margin-bottom:1.5rem;">
+        Você está usando uma senha temporária. Crie uma nova senha para continuar.
+      </div>
+
+      {% if errors %}
+        <div style="background:#fee2e2; border:1px solid #fecaca; color:#dc2626; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
+          {% for e in errors %}
+            <div>• {{ e }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" action="/trocar-senha-obrigatoria">
+        <div class="form-group">
+          <label for="nova_senha">Nova senha</label>
+          <input
+            type="password"
+            id="nova_senha"
+            name="nova_senha"
+            placeholder="••••••••"
+            required
+            autocomplete="new-password"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="confirmar_nova_senha">Confirmar nova senha</label>
+          <input
+            type="password"
+            id="confirmar_nova_senha"
+            name="confirmar_nova_senha"
+            placeholder="••••••••"
+            required
+            autocomplete="new-password"
+          >
+        </div>
+
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:-0.25rem; margin-bottom:1.25rem;">
+          Mínimo 6 caracteres
+        </p>
+
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+          Salvar nova senha
+        </button>
+      </form>
+
+      <div style="text-align:center; margin-top:1.25rem; font-size:0.875rem;">
+        <a href="/logout" style="color:var(--text-muted);">Sair</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

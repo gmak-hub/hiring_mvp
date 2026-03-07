@@ -35,19 +35,38 @@ def authenticate_user(
     return user, user.status
 
 
-# ── Custom exception used to trigger login redirect ───────────────────────────
+# ── Custom exceptions ─────────────────────────────────────────────────────────
 
 class RequiresLoginException(Exception):
     pass
 
 
+class RequiresPasswordChangeException(Exception):
+    pass
+
+
 # ── FastAPI dependencies ───────────────────────────────────────────────────────
+
+def get_session_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """
+    Returns the logged-in user from session without any extra checks.
+    Used only for routes that must be accessible even when must_change_password=True.
+    """
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise RequiresLoginException()
+    user = db.query(User).filter(User.id == user_id, User.status == "active").first()
+    if not user:
+        raise RequiresLoginException()
+    return user
+
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """
     Returns the *effective* user for the request.
     If a superadmin is impersonating another user, returns the impersonated user.
     Raises RequiresLoginException if not authenticated or account not active.
+    Raises RequiresPasswordChangeException if the user must change their password first.
     """
     user_id = request.session.get("user_id")
     if not user_id:
@@ -68,6 +87,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not user:
         raise RequiresLoginException()
 
+    if user.must_change_password:
+        raise RequiresPasswordChangeException()
+
     return user
 
 
@@ -75,6 +97,7 @@ def get_actual_user(request: Request, db: Session = Depends(get_db)) -> User:
     """
     Returns the *actual* logged-in user, ignoring any active impersonation.
     Use this for permission checks on admin-only routes.
+    Raises RequiresPasswordChangeException if the user must change their password first.
     """
     user_id = request.session.get("user_id")
     if not user_id:
@@ -82,6 +105,10 @@ def get_actual_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.query(User).filter(User.id == user_id, User.status == "active").first()
     if not user:
         raise RequiresLoginException()
+
+    if user.must_change_password:
+        raise RequiresPasswordChangeException()
+
     return user
 
 

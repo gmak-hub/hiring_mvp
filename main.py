@@ -5,7 +5,7 @@ import secrets
 import tempfile
 import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -20,9 +20,11 @@ import ai_client
 from ai_client import AIAuthError, AIConfigError, AIParsingError, AITimeoutError, AITranscriptionError
 from auth import (
     RequiresLoginException,
+    RequiresPasswordChangeException,
     authenticate_user,
     get_actual_user,
     get_current_user,
+    get_session_user,
     hash_password,
     require_admin,
     require_superadmin,
@@ -97,6 +99,11 @@ templates = Jinja2Templates(directory="templates")
 @app.exception_handler(RequiresLoginException)
 async def needs_login_handler(request: Request, exc: RequiresLoginException):
     return RedirectResponse(url="/login", status_code=303)
+
+
+@app.exception_handler(RequiresPasswordChangeException)
+async def needs_password_change_handler(request: Request, exc: RequiresPasswordChangeException):
+    return RedirectResponse(url="/trocar-senha-obrigatoria", status_code=303)
 
 
 @app.exception_handler(403)
@@ -202,71 +209,39 @@ def fazer_logout(request: Request):
     return RedirectResponse(url="/login", status_code=303)
 
 
-# ── Password recovery ──────────────────────────────────────────────────────────
+# ── Forced password change ─────────────────────────────────────────────────────
 
-_reset_tokens: dict[str, tuple[str, datetime]] = {}  # token → (email, expires_at)
+import string as _string
 
-
-@app.get("/esqueci-senha", response_class=HTMLResponse)
-def pagina_esqueci_senha(request: Request):
-    if request.session.get("user_id"):
-        return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse("esqueci_senha.html", {"request": request})
+def _gerar_senha_temporaria() -> str:
+    alphabet = _string.ascii_letters + _string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(10))
 
 
-@app.post("/esqueci-senha")
-def processar_esqueci_senha(
+@app.get("/trocar-senha-obrigatoria", response_class=HTMLResponse)
+def pagina_trocar_senha_obrigatoria(
     request: Request,
-    email: str = Form(...),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_session_user),
 ):
-    email_clean = email.strip().lower()
-    user = db.query(User).filter(User.email == email_clean).first()
-
-    if user and user.status == "active":
-        token = secrets.token_urlsafe(32)
-        _reset_tokens[token] = (email_clean, datetime.utcnow() + timedelta(hours=1))
-        reset_url = f"/redefinir-senha?token={token}"
-        print("=" * 60)
-        print(f"[RESET SENHA] URL para {email_clean}:")
-        print(f"  {reset_url}")
-        print("=" * 60)
-
-    # Always show success to prevent email enumeration
-    return templates.TemplateResponse(
-        "esqueci_senha.html",
-        {"request": request, "enviado": True},
-    )
-
-
-@app.get("/redefinir-senha", response_class=HTMLResponse)
-def pagina_redefinir_senha(request: Request, token: str = ""):
-    if request.session.get("user_id"):
+    if not current_user.must_change_password:
         return RedirectResponse(url="/", status_code=303)
-    entry = _reset_tokens.get(token)
-    valido = entry is not None and datetime.utcnow() < entry[1]
     return templates.TemplateResponse(
-        "redefinir_senha.html",
-        {"request": request, "token": token, "valido": valido},
+        "trocar_senha_obrigatoria.html",
+        {"request": request, "user": current_user},
     )
 
 
-@app.post("/redefinir-senha")
-def processar_redefinir_senha(
+@app.post("/trocar-senha-obrigatoria")
+def processar_trocar_senha_obrigatoria(
     request: Request,
-    token: str = Form(...),
     nova_senha: str = Form(...),
     confirmar_nova_senha: str = Form(...),
+    current_user: User = Depends(get_session_user),
     db: Session = Depends(get_db),
 ):
-    entry = _reset_tokens.get(token)
-    if not entry or datetime.utcnow() >= entry[1]:
-        return templates.TemplateResponse(
-            "redefinir_senha.html",
-            {"request": request, "token": token, "valido": False},
-        )
+    if not current_user.must_change_password:
+        return RedirectResponse(url="/", status_code=303)
 
-    email_clean, _ = entry
     errors = []
     if len(nova_senha) < 6:
         errors.append("A senha deve ter pelo menos 6 caracteres.")
@@ -275,18 +250,16 @@ def processar_redefinir_senha(
 
     if errors:
         return templates.TemplateResponse(
-            "redefinir_senha.html",
-            {"request": request, "token": token, "valido": True, "errors": errors},
+            "trocar_senha_obrigatoria.html",
+            {"request": request, "user": current_user, "errors": errors},
             status_code=422,
         )
 
-    user = db.query(User).filter(User.email == email_clean).first()
-    if user:
-        user.password_hash = hash_password(nova_senha)
-        db.commit()
-
-    _reset_tokens.pop(token, None)
-    return RedirectResponse(url="/login?msg=senha_redefinida", status_code=303)
+    user = db.query(User).filter(User.id == current_user.id).first()
+    user.password_hash = hash_password(nova_senha)
+    user.must_change_password = False
+    db.commit()
+    return RedirectResponse(url="/", status_code=303)
 
 
 # ── Public registration ────────────────────────────────────────────────────────
@@ -925,6 +898,7 @@ def painel_admin(
     usuarios = q.all()
 
     selected_company = db.query(Company).filter(Company.id == empresa_id).first() if empresa_id else None
+    flash_reset = request.session.pop("flash_reset", None)
 
     return templates.TemplateResponse(
         "admin/dashboard.html",
@@ -935,6 +909,7 @@ def painel_admin(
             empresa_id=empresa_id,
             status_filter=status_filter,
             selected_company=selected_company,
+            flash_reset=flash_reset,
         ),
     )
 
@@ -988,6 +963,24 @@ def editar_empresa(
         if not dup:
             empresa.name = nome.strip()
             db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/usuarios/{user_id}/reset-senha")
+def reset_senha_usuario_admin(
+    request: Request,
+    user_id: int,
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or user.role == "superadmin":
+        return RedirectResponse(url="/admin", status_code=303)
+    temp_senha = _gerar_senha_temporaria()
+    user.password_hash = hash_password(temp_senha)
+    user.must_change_password = True
+    db.commit()
+    request.session["flash_reset"] = {"nome": user.name, "temp_senha": temp_senha}
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -1073,9 +1066,10 @@ def pagina_usuarios_empresa(
         .order_by(User.created_at.desc())
         .all()
     )
+    flash_reset = request.session.pop("flash_reset", None)
     return templates.TemplateResponse(
         "empresa/usuarios.html",
-        ctx(request, current_user, usuarios=usuarios),
+        ctx(request, current_user, usuarios=usuarios, flash_reset=flash_reset),
     )
 
 
@@ -1108,6 +1102,30 @@ def criar_usuario_empresa(
         )
         db.add(new_user)
         db.commit()
+    return RedirectResponse(url="/empresa/usuarios", status_code=303)
+
+
+@app.post("/empresa/usuarios/{user_id}/reset-senha")
+def reset_senha_usuario_empresa(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if current_user.role == "superadmin":
+        return RedirectResponse(url="/admin", status_code=303)
+    target = (
+        db.query(User)
+        .filter(User.id == user_id, User.company_id == current_user.company_id)
+        .first()
+    )
+    if not target or target.id == current_user.id:
+        return RedirectResponse(url="/empresa/usuarios", status_code=303)
+    temp_senha = _gerar_senha_temporaria()
+    target.password_hash = hash_password(temp_senha)
+    target.must_change_password = True
+    db.commit()
+    request.session["flash_reset"] = {"nome": target.name, "temp_senha": temp_senha}
     return RedirectResponse(url="/empresa/usuarios", status_code=303)
 
 
