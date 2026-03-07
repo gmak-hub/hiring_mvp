@@ -16,7 +16,11 @@
         <div class="login-error">{{ error }}</div>
       {% endif %}
 
-      {% if msg == 'senha_redefinida' %}
+      {% if msg == 'cadastro_enviado' %}
+        <div style="background:#dcfce7; border:1px solid #bbf7d0; color:#15803d; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
+          Cadastro realizado! Sua conta aguarda aprovação do administrador.
+        </div>
+      {% elif msg == 'senha_redefinida' %}
         <div style="background:#dcfce7; border:1px solid #bbf7d0; color:#15803d; border-radius:6px; padding:0.625rem 0.875rem; font-size:0.875rem; margin-bottom:1.25rem;">
           Senha redefinida com sucesso! Faça login com a nova senha.
         </div>

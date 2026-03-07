@@ -301,10 +301,10 @@ def fazer_registro(
             status_code=422,
         )
 
-    # Create new company (active — no approval required)
+    # Create new company (pending approval)
     company = db.query(Company).filter(Company.name.ilike(nome_empresa.strip())).first()
     if company is None:
-        company = Company(name=nome_empresa.strip(), status="active")
+        company = Company(name=nome_empresa.strip(), status="pending")
         db.add(company)
         db.flush()
 
@@ -314,17 +314,14 @@ def fazer_registro(
         name=nome.strip(),
         password_hash=hash_password(senha),
         role="admin",
-        status="active",
+        status="pending",
         email_verified=True,
-        is_active=True,
+        is_active=False,
     )
     db.add(new_user)
     db.commit()
-    db.refresh(new_user)
 
-    # Auto-login after registration
-    request.session["user_id"] = new_user.id
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/login?msg=cadastro_enviado", status_code=303)
 
 
 # ── Account management ─────────────────────────────────────────────────────────
