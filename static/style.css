@@ -574,8 +574,21 @@ table tr:hover td { background: #fafafa; }
   border-radius: 0 4px 4px 0;
   font-size: 0.8375rem;
   color: #0c4a6e;
-  font-family: 'Courier New', Courier, monospace;
   line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.evidence-quote {
+  font-family: 'Courier New', Courier, monospace;
+  color: #0c4a6e;
+}
+
+.evidence-interp {
+  font-size: 0.8rem;
+  color: #475569;
+  font-style: italic;
 }
 
 .no-evidence {

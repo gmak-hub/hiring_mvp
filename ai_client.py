@@ -234,12 +234,97 @@ def _numerar_linhas(transcricao: str) -> str:
     return "\n".join(f"[{i + 1}] {linha}" for i, linha in enumerate(linhas))
 
 
-def _ordenar_evidencias(evidencias: list[str]) -> list[str]:
-    """Sort evidence citations by their transcript line number ([N] 'quote')."""
-    def _linha(ev: str) -> int:
-        m = re.match(r"\[(\d+)\]", ev.strip())
+def _ordenar_evidencias(evidencias: list) -> list:
+    """Sort evidence items by transcript line number.
+
+    Each item is a dict {"trecho": "[N] '...'", "interpretacao": "..."}.
+    """
+    def _linha(ev) -> int:
+        trecho = ev.get("trecho", "") if isinstance(ev, dict) else str(ev)
+        m = re.match(r"\[(\d+)\]", trecho.strip())
         return int(m.group(1)) if m else 999999
     return sorted(evidencias, key=_linha)
+
+
+def _extrair_momentos(transcricao: str, nome_candidato: str) -> list[dict]:
+    """Stage 1 of evaluation: read the full transcript and extract relevant behavioral moments.
+
+    Returns a list of dicts: {"tema": str, "trecho": str, "resumo": str}
+    - tema:   behavioral theme (e.g. "tomada de decisão", "gestão de conflitos")
+    - trecho: 1-2 sentences from the candidate with transcript line number
+    - resumo: one objective sentence about what the moment reveals
+    Raises AIParsingError if the response cannot be parsed or is empty.
+    """
+    numerada = _numerar_linhas(transcricao)
+
+    prompt = f"""Você é um analista de entrevistas comportamentais.
+Leia a transcrição completa da entrevista abaixo e extraia os momentos mais relevantes da conversa.
+
+Candidato: {nome_candidato}
+
+=== TRANSCRIÇÃO (com número de linhas) ===
+{numerada}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Leia a entrevista inteira como um fluxo contínuo de conversa — não como frases isoladas.
+O raciocínio do candidato muitas vezes se constrói ao longo de vários turnos:
+pergunta → resposta → follow-up do entrevistador → continuação da resposta.
+Trate turnos relacionados como parte do mesmo momento quando fizerem sentido como sequência.
+
+Depois de ler tudo, identifique os momentos mais reveladores — trechos onde o candidato:
+- Descreve uma situação, decisão ou ação que tomou
+- Revela como pensa, raciocina ou estrutura um problema
+- Demonstra uma habilidade interpessoal, de liderança ou colaboração
+- Responde a um follow-up de forma que revela mais sobre seu comportamento ou valores
+
+Para cada momento, extraia:
+- TEMA: o tema comportamental daquele momento (ex: "resolução de conflitos", "tomada de decisão", "gestão de time", "adaptabilidade", "comunicação sob pressão")
+- TRECHO: 1 ou 2 frases do candidato que representem o núcleo daquele momento, com número de linha no formato "[LINHA] '...'"
+- RESUMO: uma frase objetiva explicando o que esse momento revela sobre o candidato
+
+REGRAS:
+- Capture momentos que representem DIFERENTES aspectos do comportamento do candidato
+- Priorize trechos em que o candidato explica raciocínio ou impacto, não apenas lista fatos
+- Ignore turnos puramente técnicos (ferramentas, sistemas, código) ou logísticos (datas, cargos, nomes de empresa)
+- Cada trecho deve conter no máximo 1 ou 2 frases do candidato
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "momentos": [
+    {{
+      "tema": "tema comportamental do momento",
+      "trecho": "[N] 'citação direta do candidato — 1 ou 2 frases'",
+      "resumo": "Uma frase objetiva sobre o que esse momento revela."
+    }}
+  ]
+}}"""
+
+    texto = _chamar_api(prompt, max_tokens=4096)
+
+    try:
+        bruto = _extrair_json(texto)
+        dados = json.loads(bruto)
+    except json.JSONDecodeError as e:
+        raise AIParsingError(f"JSON inválido ao extrair momentos da entrevista: {e}") from e
+
+    momentos = dados.get("momentos", [])
+    if not momentos:
+        raise AIParsingError("Extração de momentos retornou lista vazia.")
+
+    return momentos
+
+
+def _formatar_momentos(momentos: list[dict]) -> str:
+    """Format extracted moments into a readable block for evaluation prompts."""
+    linhas = []
+    for i, m in enumerate(momentos, 1):
+        linhas.append(f"Momento {i} — Tema: {m['tema']}")
+        linhas.append(f"  Trecho:  {m['trecho']}")
+        linhas.append(f"  Resumo:  {m['resumo']}")
+    return "\n".join(linhas)
 
 
 def _normalizar_pesos_inplace(criterios: list) -> None:
@@ -600,16 +685,24 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
 def avaliar_criterio_unico(criterio: dict, nome_candidato: str, transcricao: str) -> dict:
     """Evaluate a single criterion for a candidate given their transcript.
 
+    Uses a two-stage process:
+    - Stage 1: extract behavioral moments from the transcript
+    - Stage 2: evaluate the criterion using those moments as evidence
+
     Returns one avaliacao dict. Two possible shapes:
     - Scored:   {"criterio", "nota", "peso", "contribuicao", "evidencias", "lacunas"}
     - Unscored: {"criterio", "peso", "sem_evidencia": True, "motivo", "evidencia_esperada"}
     Raises AIParsingError if the response is invalid.
     """
-    numerada = _numerar_linhas(transcricao)
+    # Stage 1 — extract behavioral moments from the full transcript
+    momentos = _extrair_momentos(transcricao, nome_candidato)
+    momentos_txt = _formatar_momentos(momentos)
+
     rubrica_txt = "\n".join(f"  {k}: {v}" for k, v in sorted(criterio["rubrica"].items()))
     nome_c = criterio["nome"]
     peso_c = criterio["peso"]
 
+    # Stage 2 — evaluate the criterion using the extracted moments
     prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos.
 Avalie o candidato abaixo para UM ÚNICO critério comportamental.
 
@@ -619,40 +712,48 @@ CRITÉRIO: {nome_c} (Peso: {peso_c}%)
 Rubrica:
 {rubrica_txt}
 
-=== TRANSCRIÇÃO (com número de linhas) ===
-{numerada}
+=== MOMENTOS RELEVANTES DA ENTREVISTA ===
+{momentos_txt}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTRUÇÕES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PASSO 1 — Verifique se há evidência real na transcrição para este critério.
-Procure falas do candidato que demonstrem diretamente o comportamento descrito na rubrica.
+Os momentos acima foram extraídos da entrevista completa e representam os trechos mais relevantes do comportamento do candidato.
 
-SE houver evidência suficiente → avalie com nota 1–5 e retorne o formato A.
-SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o formato B.
+PASSO 1 — Analise todos os momentos e identifique quais demonstram o critério "{nome_c}".
+Considere o padrão de comportamento ao longo da entrevista, não apenas momentos isolados.
+
+PASSO 2 — Verifique se há evidência suficiente nos momentos para avaliar este critério.
+SE houver → avalie com nota 1–5 e retorne o formato A.
+SE NÃO houver → NÃO atribua nota e retorne o formato B.
 
 REGRA CRÍTICA: Ausência de evidência ≠ desempenho ruim.
-Não invente contexto. Não assuma coisas não ditas na transcrição.
+Não invente contexto. Não assuma comportamentos não mencionados nos momentos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FORMATO A — com evidência (use quando há base na transcrição para avaliar):
+FORMATO A — com evidência:
 {{
   "criterio": "{nome_c}",
   "nota": 3,
   "peso": {peso_c},
   "contribuicao": {round(3 * peso_c / 5, 1)},
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": [
+    {{
+      "trecho": "[N] 'trecho do momento usado como evidência'",
+      "interpretacao": "Uma frase explicando o que esse trecho demonstra sobre o candidato."
+    }}
+  ],
   "lacunas": "O que não foi demonstrado ou estava ausente"
 }}
 
-FORMATO B — sem evidência (use quando a transcrição não permite avaliar este critério):
+FORMATO B — sem evidência:
 {{
   "criterio": "{nome_c}",
   "peso": {peso_c},
   "sem_evidencia": true,
-  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
-  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+  "motivo": "Explicação breve de por que os momentos não permitem avaliar este critério.",
+  "evidencia_esperada": "Que tipo de comportamento seria necessário para avaliar este critério."
 }}
 
 Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente um dos dois formatos acima."""
@@ -681,7 +782,14 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
 
 
 def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) -> dict:
-    numerada = _numerar_linhas(transcricao)
+    """Evaluate a candidate against a full scorecard using a two-stage process.
+
+    Stage 1: extract behavioral moments from the transcript.
+    Stage 2: evaluate all criteria using those moments as evidence.
+    """
+    # Stage 1 — extract behavioral moments from the full transcript
+    momentos = _extrair_momentos(transcricao, nome_candidato)
+    momentos_txt = _formatar_momentos(momentos)
 
     blocos_criterio = []
     for c in scorecard["criterios"]:
@@ -691,31 +799,35 @@ def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) ->
         )
     texto_criterios = "\n\n".join(blocos_criterio)
 
-    prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
+    # Stage 2 — evaluate all criteria using the extracted moments
+    prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos.
+Avalie o candidato abaixo com base no scorecard e nos momentos identificados na entrevista.
 
 Candidato: {nome_candidato}
 
 === SCORECARD ===
 {texto_criterios}
 
-=== TRANSCRIÇÃO (com número de linhas) ===
-{numerada}
+=== MOMENTOS RELEVANTES DA ENTREVISTA ===
+{momentos_txt}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTRUÇÕES — LEIA COM ATENÇÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Para CADA critério do scorecard, siga este processo:
+Os momentos acima foram extraídos da entrevista completa. Eles representam os trechos mais relevantes do comportamento do candidato ao longo da conversa.
 
-PASSO 1 — Verifique se há evidência real na transcrição.
-Procure falas do candidato que demonstrem diretamente o comportamento avaliado naquele critério.
+Para CADA critério do scorecard:
 
-SE houver evidência suficiente → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
-SE NÃO houver evidência suficiente → NÃO atribua nota (use o objeto "sem evidência").
+PASSO 1 — Analise todos os momentos e identifique quais são relevantes para aquele critério.
+Considere o padrão de comportamento demonstrado ao longo da entrevista — não apenas momentos isolados.
+
+PASSO 2 — Verifique se há evidência suficiente nos momentos para avaliar este critério.
+SE houver → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
+SE NÃO houver → NÃO atribua nota (use o objeto "sem evidência").
 
 REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
-Não invente contexto. Não assuma comportamentos não descritos na transcrição.
-Só cite linhas que realmente existem na transcrição.
+Não invente contexto. Não assuma comportamentos não mencionados nos momentos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATOS DOS OBJETOS DE AVALIAÇÃO
@@ -727,23 +839,28 @@ Objeto COM nota (quando há evidência para avaliar):
   "nota": 3,
   "peso": 20,
   "contribuicao": 12.0,
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": [
+    {{
+      "trecho": "[N] 'trecho do momento usado como evidência'",
+      "interpretacao": "Uma frase explicando o que esse trecho demonstra sobre o candidato."
+    }}
+  ],
   "lacunas": "O que não foi demonstrado"
 }}
 
-Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
+Objeto SEM evidência (quando os momentos não permitem avaliar este critério):
 {{
   "criterio": "NomeDoCriterio",
   "peso": 20,
   "sem_evidencia": true,
-  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
-  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+  "motivo": "Explicação breve de por que os momentos não permitem avaliar este critério.",
+  "evidencia_esperada": "Que tipo de comportamento seria necessário para avaliar este critério."
 }}
 
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
 - contribuicao = (nota × peso) / 5
-- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- evidencias: use os trechos dos momentos relevantes; cada trecho com número de linha no formato "[LINHA] '...'"
 - lacunas: o que ficou ausente ou não foi demonstrado
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
@@ -753,7 +870,7 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
   ]
 }}"""
 
-    texto = _chamar_api(prompt, max_tokens=6144)
+    texto = _chamar_api(prompt, max_tokens=4096)
 
     try:
         bruto = _extrair_json(texto)

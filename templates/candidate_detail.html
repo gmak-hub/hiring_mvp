@@ -136,7 +136,10 @@
         <div class="evidence-label">Evidências</div>
         <ul class="evidence-list">
           {% for ev in av.evidencias %}
-          <li class="evidence-item">{{ ev }}</li>
+          <li class="evidence-item">
+            <div class="evidence-quote">{{ ev.trecho }}</div>
+            <div class="evidence-interp">{{ ev.interpretacao }}</div>
+          </li>
           {% endfor %}
         </ul>
       {% else %}
