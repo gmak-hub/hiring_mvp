@@ -143,9 +143,14 @@ def _ai_msg_code(exc: Exception) -> str:
 # ── Auth routes ────────────────────────────────────────────────────────────────
 
 @app.get("/login", response_class=HTMLResponse)
-def pagina_login(request: Request, msg: str = None):
-    if request.session.get("user_id"):
-        return RedirectResponse(url="/", status_code=303)
+def pagina_login(request: Request, msg: str = None, db: Session = Depends(get_db)):
+    user_id = request.session.get("user_id")
+    if user_id:
+        user = db.query(User).filter(User.id == user_id, User.status == "active").first()
+        if user and not user.must_change_password:
+            return RedirectResponse(url="/", status_code=303)
+        # Sessão desatualizada (usuário bloqueado/removido) — limpa para evitar loop
+        request.session.clear()
     return templates.TemplateResponse("login.html", {"request": request, "msg": msg})
 
 
