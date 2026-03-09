@@ -327,6 +327,91 @@ def _formatar_momentos(momentos: list[dict]) -> str:
     return "\n".join(linhas)
 
 
+def _extrair_evidencias_por_criterio(
+    criterios: list[dict],
+    transcricao: str,
+    nome_candidato: str,
+) -> dict[str, dict]:
+    """Stage 1 of evaluation: extract positive and negative evidence for each criterion.
+
+    Returns a dict keyed by criterion name:
+    {
+      "NomeCriterio": {
+        "positivas": [{"trecho": "[N] '...'", "interpretacao": "..."}, ...],
+        "negativas": [{"trecho": "[N] '...'", "interpretacao": "..."}, ...]
+      }
+    }
+    Raises AIParsingError if the response cannot be parsed.
+    """
+    numerada = _numerar_linhas(transcricao)
+
+    blocos = []
+    for c in criterios:
+        rubrica_txt = "\n".join(f"    {k}: {v}" for k, v in sorted(c["rubrica"].items()))
+        blocos.append(f"  Critério: {c['nome']}\n  Rubrica:\n{rubrica_txt}")
+    criterios_txt = "\n\n".join(blocos)
+
+    prompt = f"""Você é um analista de entrevistas comportamentais.
+Sua tarefa é identificar evidências na transcrição para cada critério do scorecard.
+NÃO dê notas nesta etapa — apenas colete sinais observáveis.
+
+Candidato: {nome_candidato}
+
+=== SCORECARD ===
+{criterios_txt}
+
+=== TRANSCRIÇÃO (com número de linhas) ===
+{numerada}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Leia a transcrição inteira. Depois, para CADA critério do scorecard:
+
+PASSO 1 — Identifique sinais POSITIVOS
+Falas do candidato que demonstram o comportamento descrito na rubrica daquele critério.
+
+PASSO 2 — Identifique sinais NEGATIVOS
+Falas que revelam ausência, inconsistência ou fraqueza naquele comportamento.
+
+Para cada evidência (positiva ou negativa):
+- trecho: citação direta de 1 ou 2 frases do candidato, com número de linha no formato "[LINHA] '...'"
+- interpretacao: uma frase curta explicando o que aquela fala demonstra ou revela
+
+LIMITES:
+- Extraia TODOS os sinais que encontrar — não limite a quantidade
+- Se não houver, retorne lista vazia para aquela categoria
+- Use apenas o que realmente aparece na transcrição — PROIBIDO inventar evidências
+- PROIBIDO dar nota ou fazer recomendação nesta etapa
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "evidencias": {{
+    "NomeCriterio": {{
+      "positivas": [
+        {{"trecho": "[N] 'citação direta do candidato'", "interpretacao": "O que essa fala demonstra positivamente."}}
+      ],
+      "negativas": [
+        {{"trecho": "[N] 'citação direta do candidato'", "interpretacao": "O que essa fala revela como ausência ou fraqueza."}}
+      ]
+    }}
+  }}
+}}
+
+Use os nomes exatos dos critérios do scorecard como chaves. Inclua todos os critérios, mesmo os que não tiveram evidências (retorne listas vazias)."""
+
+    texto = _chamar_api(prompt, max_tokens=4096)
+
+    try:
+        bruto = _extrair_json(texto)
+        dados = json.loads(bruto)
+    except json.JSONDecodeError as e:
+        raise AIParsingError(f"JSON inválido ao extrair evidências por critério: {e}") from e
+
+    return dados.get("evidencias", {})
+
+
 # Minimum number of valid evidence items required to score a criterion.
 # If a scored criterion has fewer than this, it is demoted to sem_evidencia server-side.
 _MIN_EVIDENCIAS = 2
@@ -729,25 +814,37 @@ def avaliar_criterio_unico(criterio: dict, nome_candidato: str, transcricao: str
     """Evaluate a single criterion for a candidate given their transcript.
 
     Uses a two-stage process:
-    - Stage 1: extract behavioral moments from the transcript
-    - Stage 2: evaluate the criterion using those moments as evidence
+    - Stage 1: extract positive and negative evidence for this criterion from the transcript
+    - Stage 2: score the criterion using only the extracted evidence
 
     Returns one avaliacao dict. Two possible shapes:
     - Scored:   {"criterio", "nota", "peso", "contribuicao", "evidencias", "lacunas"}
     - Unscored: {"criterio", "peso", "sem_evidencia": True, "motivo", "evidencia_esperada"}
     Raises AIParsingError if the response is invalid.
     """
-    # Stage 1 — extract behavioral moments from the full transcript
-    momentos = _extrair_momentos(transcricao, nome_candidato)
-    momentos_txt = _formatar_momentos(momentos)
-
-    rubrica_txt = "\n".join(f"  {k}: {v}" for k, v in sorted(criterio["rubrica"].items()))
     nome_c = criterio["nome"]
     peso_c = criterio["peso"]
+    rubrica_txt = "\n".join(f"  {k}: {v}" for k, v in sorted(criterio["rubrica"].items()))
 
-    # Stage 2 — evaluate the criterion using the extracted moments
+    # Stage 1 — extract positive and negative evidence for this criterion
+    ev_por_criterio = _extrair_evidencias_por_criterio([criterio], transcricao, nome_candidato)
+    ev = ev_por_criterio.get(nome_c, {})
+    positivas = ev.get("positivas", [])
+    negativas = ev.get("negativas", [])
+
+    pos_txt = (
+        "\n".join(f"  + {e['trecho']} — {e['interpretacao']}" for e in positivas)
+        or "  (nenhuma)"
+    )
+    neg_txt = (
+        "\n".join(f"  - {e['trecho']} — {e['interpretacao']}" for e in negativas)
+        or "  (nenhuma)"
+    )
+
+    # Stage 2 — score using only the extracted evidence
     prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos.
-Avalie o candidato abaixo para UM ÚNICO critério comportamental.
+Avalie o candidato para o critério abaixo usando APENAS as evidências fornecidas.
+Não busque novas evidências — use somente o que está listado.
 
 Candidato: {nome_candidato}
 
@@ -755,27 +852,28 @@ CRITÉRIO: {nome_c} (Peso: {peso_c}%)
 Rubrica:
 {rubrica_txt}
 
-=== MOMENTOS RELEVANTES DA ENTREVISTA ===
-{momentos_txt}
+Evidências positivas ({len(positivas)}):
+{pos_txt}
+
+Evidências negativas ({len(negativas)}):
+{neg_txt}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTRUÇÕES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Os momentos acima foram extraídos da entrevista completa e representam os trechos mais relevantes do comportamento do candidato.
+Use APENAS as evidências acima. Não busque novas na transcrição.
 
-PASSO 1 — Analise todos os momentos e identifique quais demonstram o critério "{nome_c}".
-Considere o padrão de comportamento ao longo da entrevista, não apenas momentos isolados.
+SE houver evidências suficientes → avalie com nota 1–5 e retorne o FORMATO A.
+SE não houver evidências suficientes → retorne o FORMATO B.
 
-PASSO 2 — Verifique se há evidência suficiente nos momentos para avaliar este critério.
-SE houver → avalie com nota 1–5 e retorne o formato A.
-SE NÃO houver → NÃO atribua nota e retorne o formato B.
+A nota deve seguir estritamente a rubrica fornecida.
+Se as evidências forem poucas, mencione menor confiança na justificativa (campo lacunas).
 
 REGRA CRÍTICA: Ausência de evidência ≠ desempenho ruim.
-Não invente contexto. Não assuma comportamentos não mencionados nos momentos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FORMATO A — com evidência:
+FORMATO A — com nota:
 {{
   "criterio": "{nome_c}",
   "nota": 3,
@@ -783,20 +881,20 @@ FORMATO A — com evidência:
   "contribuicao": {round(3 * peso_c / 5, 1)},
   "evidencias": [
     {{
-      "trecho": "[N] 'trecho do momento usado como evidência'",
-      "interpretacao": "Uma frase explicando o que esse trecho demonstra sobre o candidato."
+      "trecho": "[N] 'trecho da evidência positiva usada'",
+      "interpretacao": "Uma frase sobre o que esse trecho demonstra."
     }}
   ],
-  "lacunas": "O que não foi demonstrado ou estava ausente"
+  "lacunas": "O que as evidências negativas revelam como ausente ou inconsistente."
 }}
 
-FORMATO B — sem evidência:
+FORMATO B — sem evidência suficiente:
 {{
   "criterio": "{nome_c}",
   "peso": {peso_c},
   "sem_evidencia": true,
-  "motivo": "Explicação breve de por que os momentos não permitem avaliar este critério.",
-  "evidencia_esperada": "Que tipo de comportamento seria necessário para avaliar este critério."
+  "motivo": "Explicação de por que as evidências não permitem avaliar este critério.",
+  "evidencia_esperada": "Que tipo de sinal seria necessário para avaliar este critério."
 }}
 
 Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente um dos dois formatos acima."""
@@ -829,56 +927,69 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
 def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) -> dict:
     """Evaluate a candidate against a full scorecard using a two-stage process.
 
-    Stage 1: extract behavioral moments from the transcript.
-    Stage 2: evaluate all criteria using those moments as evidence.
+    Stage 1: extract positive and negative evidence for each criterion from the transcript.
+    Stage 2: score each criterion using only the evidence from Stage 1.
     """
-    # Stage 1 — extract behavioral moments from the full transcript
-    momentos = _extrair_momentos(transcricao, nome_candidato)
-    momentos_txt = _formatar_momentos(momentos)
+    criterios = scorecard["criterios"]
 
-    blocos_criterio = []
-    for c in scorecard["criterios"]:
+    # Stage 1 — extract evidence per criterion (positive and negative)
+    ev_por_criterio = _extrair_evidencias_por_criterio(criterios, transcricao, nome_candidato)
+
+    # Build per-criterion blocks for the scoring prompt
+    blocos = []
+    for c in criterios:
+        nome = c["nome"]
+        peso = c["peso"]
         rubrica = "\n".join(f"  {k}: {v}" for k, v in sorted(c["rubrica"].items()))
-        blocos_criterio.append(
-            f"CRITÉRIO: {c['nome']} (Peso: {c['peso']}%)\nRubrica:\n{rubrica}"
-        )
-    texto_criterios = "\n\n".join(blocos_criterio)
+        ev = ev_por_criterio.get(nome, {})
+        positivas = ev.get("positivas", [])
+        negativas = ev.get("negativas", [])
 
-    # Stage 2 — evaluate all criteria using the extracted moments
+        pos_txt = (
+            "\n".join(f"  + {e['trecho']} — {e['interpretacao']}" for e in positivas)
+            or "  (nenhuma)"
+        )
+        neg_txt = (
+            "\n".join(f"  - {e['trecho']} — {e['interpretacao']}" for e in negativas)
+            or "  (nenhuma)"
+        )
+
+        blocos.append(
+            f"CRITÉRIO: {nome} (Peso: {peso}%)\n"
+            f"Rubrica:\n{rubrica}\n"
+            f"Evidências positivas ({len(positivas)}):\n{pos_txt}\n"
+            f"Evidências negativas ({len(negativas)}):\n{neg_txt}"
+        )
+
+    blocos_txt = "\n\n".join(blocos)
+
+    # Stage 2 — score all criteria using only the extracted evidence
     prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos.
-Avalie o candidato abaixo com base no scorecard e nos momentos identificados na entrevista.
+Avalie o candidato abaixo usando APENAS as evidências fornecidas para cada critério.
+Não busque novas evidências — use somente o que está listado.
 
 Candidato: {nome_candidato}
 
-=== SCORECARD ===
-{texto_criterios}
-
-=== MOMENTOS RELEVANTES DA ENTREVISTA ===
-{momentos_txt}
+{blocos_txt}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTRUÇÕES — LEIA COM ATENÇÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Os momentos acima foram extraídos da entrevista completa. Eles representam os trechos mais relevantes do comportamento do candidato ao longo da conversa.
-
-Para CADA critério do scorecard:
-
-PASSO 1 — Analise todos os momentos e identifique quais são relevantes para aquele critério.
-Considere o padrão de comportamento demonstrado ao longo da entrevista — não apenas momentos isolados.
-
-PASSO 2 — Verifique se há evidência suficiente nos momentos para avaliar este critério.
-SE houver → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
-SE NÃO houver → NÃO atribua nota (use o objeto "sem evidência").
+Para CADA critério acima:
+1. Use APENAS as evidências listadas para decidir a nota — não busque novas na transcrição
+2. SE houver evidências suficientes → avalie com nota 1–5 conforme a rubrica
+3. SE não houver evidências suficientes → retorne o objeto sem_evidencia
+4. A nota deve seguir estritamente a rubrica fornecida
+5. Se as evidências forem poucas, mencione menor confiança no campo lacunas
 
 REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
-Não invente contexto. Não assuma comportamentos não mencionados nos momentos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATOS DOS OBJETOS DE AVALIAÇÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Objeto COM nota (quando há evidência para avaliar):
+Objeto COM nota (quando há evidências para avaliar):
 {{
   "criterio": "NomeDoCriterio",
   "nota": 3,
@@ -886,27 +997,27 @@ Objeto COM nota (quando há evidência para avaliar):
   "contribuicao": 12.0,
   "evidencias": [
     {{
-      "trecho": "[N] 'trecho do momento usado como evidência'",
-      "interpretacao": "Uma frase explicando o que esse trecho demonstra sobre o candidato."
+      "trecho": "[N] 'trecho da evidência positiva usada'",
+      "interpretacao": "Uma frase sobre o que esse trecho demonstra."
     }}
   ],
-  "lacunas": "O que não foi demonstrado"
+  "lacunas": "O que as evidências negativas revelam como ausente; inclua nota de baixa confiança se poucas evidências."
 }}
 
-Objeto SEM evidência (quando os momentos não permitem avaliar este critério):
+Objeto SEM evidência suficiente:
 {{
   "criterio": "NomeDoCriterio",
   "peso": 20,
   "sem_evidencia": true,
-  "motivo": "Explicação breve de por que os momentos não permitem avaliar este critério.",
-  "evidencia_esperada": "Que tipo de comportamento seria necessário para avaliar este critério."
+  "motivo": "Explicação de por que as evidências não permitem avaliar este critério.",
+  "evidencia_esperada": "Que tipo de sinal seria necessário para avaliar este critério."
 }}
 
 Regras adicionais para objetos COM nota:
-- nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
+- nota: inteiro de 1 a 5, estritamente conforme a rubrica
 - contribuicao = (nota × peso) / 5
-- evidencias: use os trechos dos momentos relevantes; cada trecho com número de linha no formato "[LINHA] '...'"
-- lacunas: o que ficou ausente ou não foi demonstrado
+- evidencias: use os trechos das evidências positivas relevantes
+- lacunas: o que ficou ausente ou inconsistente conforme as evidências negativas
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {{
