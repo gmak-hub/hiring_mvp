@@ -313,52 +313,83 @@ def _chamar_api(prompt: str, max_tokens: int) -> str:
 
 def gerar_scorecard(nome_cargo: str, descricao_vaga: str) -> dict:
     prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
-Sua tarefa é criar um scorecard de entrevista baseado EXCLUSIVAMENTE em competências comportamentais, soft skills e fit cultural para o cargo abaixo.
+Sua tarefa é criar um scorecard de entrevista para o cargo abaixo.
 
 Cargo: {nome_cargo}
 Descrição da Vaga:
 {descricao_vaga}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGRAS ABSOLUTAS — SIGA SEM EXCEÇÃO
+PASSO 1 — ANALISE A VAGA ANTES DE GERAR OS CRITÉRIOS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Antes de definir os critérios, reflita internamente:
+- Quais comportamentos são mais críticos para o sucesso neste cargo específico?
+- Quais dinâmicas interpessoais e de tomada de decisão mais diferenciam um profissional mediano de um excelente aqui?
+Use essa análise para escolher 5 critérios representativos deste cargo — não critérios genéricos que servem para qualquer vaga.
 
-PROIBIDO incluir qualquer critério que envolva:
-✗ Hard skills técnicas (programação, linguagens de programação, ferramentas, plataformas)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+O QUE É PROIBIDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✗ Hard skills técnicas (programação, linguagens, ferramentas, plataformas)
 ✗ Conhecimento de softwares ou sistemas (Excel, Python, SQL, Salesforce, SAP, Power BI, etc.)
 ✗ Certificações, diplomas ou requisitos de formação acadêmica
 ✗ Idiomas ou fluência linguística
-✗ Qualquer habilidade que se aprende em curso técnico, e não em interações humanas
+✗ Qualquer habilidade adquirida em curso técnico, e não em interações humanas
+✗ Critérios redundantes ou parecidos entre si
 
-OBRIGATÓRIO incluir apenas critérios que avaliem:
-✓ Comportamentos observáveis em situações reais de trabalho
+Se a vaga mencionar requisitos técnicos (ex: "deve conhecer Python", "fluência em inglês"),
+IGNORE-OS — são pré-requisitos de triagem e não fazem parte da avaliação comportamental.
+
+O QUE É OBRIGATÓRIO
+✓ Comportamentos observáveis em situações de trabalho
 ✓ Soft skills: liderança, comunicação, resolução de conflitos, adaptabilidade, colaboração, etc.
-✓ Fit cultural e de valores com a empresa e o time
-✓ Mentalidade e forma de pensar (ex: orientação a resultados, pensamento estratégico, dono do negócio)
-✓ Dinâmicas interpessoais e de equipe
+✓ Fit cultural, de valores e de mentalidade com o cargo
+✓ Dinâmicas interpessoais e forma de tomar decisões
 
-SOBRE REQUISITOS TÉCNICOS NA DESCRIÇÃO DA VAGA:
-Se a vaga mencionar hard skills técnicas (ex: "deve conhecer Python", "experiência com Salesforce", "fluência em inglês"),
-IGNORE-OS completamente — esses são pré-requisitos de triagem e NÃO fazem parte da avaliação comportamental.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILOSOFIA DAS RUBRICAS — LEIA COM ATENÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+As rubricas devem avaliar COMO o candidato pensa e responde — não se ele viveu exatamente uma situação específica.
+O candidato pode demonstrar a mesma competência com exemplos de contextos completamente diferentes.
+
+❌ ERRADO — exige experiência específica:
+"Liderou uma reorganização estratégica do time com múltiplos níveis de reporte."
+
+✅ CERTO — avalia qualidade da resposta:
+"Explica decisões considerando impactos de longo prazo e possíveis consequências não óbvias."
+
+Cada nível da rubrica deve descrever SINAIS OBSERVÁVEIS NA RESPOSTA DO CANDIDATO, como:
+- Clareza e lógica do raciocínio apresentado
+- Capacidade de estruturar o problema antes de explicar a solução
+- Qualidade e pertinência dos exemplos usados para sustentar o argumento
+- Profundidade da reflexão e consciência das implicações e trade-offs
+
+As descrições devem funcionar independentemente do setor, tamanho de empresa ou cargo anterior do candidato.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REGRAS DE FORMATO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Retorne EXATAMENTE 5 critérios — nem mais, nem menos.
-2. O nome de cada critério deve ser EXATAMENTE UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução", "Comunicação").
-3. Os pesos devem ser números inteiros que somem EXATAMENTE 100.
-4. As descrições de rubrica devem ser ESPECÍFICAS e COMPORTAMENTAIS para ESTE cargo. Sem frases genéricas.
-5. Cada nível deve descrever um comportamento observável E justificar por que corresponde àquela nota.
+2. Cada critério deve medir uma DIMENSÃO COMPORTAMENTAL DIFERENTE (sem critérios parecidos ou redundantes).
+3. O nome de cada critério deve ser EXATAMENTE UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução").
+4. Os pesos devem ser números inteiros que somem EXATAMENTE 100.
+5. Cada descrição de nível deve ter NO MÁXIMO 200 caracteres.
+6. Os níveis devem mostrar PROGRESSÃO REAL de comportamento — não apenas variações de intensidade como "fraco / médio / forte".
 
-Escala da rubrica:
-1 = Ausência clara do comportamento exigido
-2 = Demonstração fraca ou inconsistente
-3 = Competência adequada / nível base
-4 = Demonstração forte e consistente
-5 = Demonstração excepcional, escalável e estratégica
+Escala da rubrica (cada nível descreve um sinal observável na resposta):
+1 = Resposta vaga, sem estrutura ou sem exemplos; não demonstra o comportamento
+2 = Demonstração superficial ou inconsistente; exemplos genéricos ou sem profundidade
+3 = Demonstra o comportamento com clareza em pelo menos um exemplo concreto e bem explicado
+4 = Demonstra com consistência, estrutura clara e reflexão sobre impactos, alternativas ou aprendizados
+5 = Raciocínio estruturado, exemplos pertinentes e consciência de implicações complexas ou de longo prazo
 
-EXEMPLO RUIM (PROIBIDO): "Domina Python e SQL." / "Possui certificação AWS." / "Fluente em inglês."
-EXEMPLO BOM para Liderança/5: "Estruturou e escalou equipe com múltiplos níveis de reporte; implementou sistema de metas (OKRs ou equivalente); tomou decisões de contratação e desligamento com base em critérios objetivos; há evidências de outros gestores replicando seu modelo de gestão."
+EXEMPLO RUIM (PROIBIDO):
+Liderança/5: "Liderou equipe com múltiplos níveis de reporte e implementou OKRs."
+→ Exige experiência específica; candidato de empresa pequena será penalizado injustamente.
+
+EXEMPLO BOM:
+Liderança/5: "Explica como influenciou o grupo sem autoridade formal, descreve o raciocínio por trás das decisões e os impactos percebidos."
+→ Avalia o pensamento, não o histórico.
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {{
@@ -367,11 +398,11 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
       "nome": "UmaPalavra",
       "peso": 20,
       "rubrica": {{
-        "1": "Descrição observável específica para este cargo — nível 1",
-        "2": "Descrição observável específica para este cargo — nível 2",
-        "3": "Descrição observável específica para este cargo — nível 3",
-        "4": "Descrição observável específica para este cargo — nível 4",
-        "5": "Descrição observável específica para este cargo — nível 5"
+        "1": "Sinal observável na resposta — nível 1 (máx 200 caracteres)",
+        "2": "Sinal observável na resposta — nível 2 (máx 200 caracteres)",
+        "3": "Sinal observável na resposta — nível 3 (máx 200 caracteres)",
+        "4": "Sinal observável na resposta — nível 4 (máx 200 caracteres)",
+        "5": "Sinal observável na resposta — nível 5 (máx 200 caracteres)"
       }}
     }}
   ]
