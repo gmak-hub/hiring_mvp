@@ -1,5 +1,5 @@
 """
-AI client for HiringEval — Anthropic Claude integration.
+AI client for Cabine — Anthropic Claude integration.
 
 Error hierarchy:
   AIError (base)

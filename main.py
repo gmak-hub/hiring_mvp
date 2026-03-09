@@ -59,7 +59,7 @@ def _seed_initial_data(db: Session) -> None:
         superadmin = User(
             email="gmakdesiy@gmail.com",
             name="Gabriel Makdesi",
-            password_hash=hash_password("HiringEval2026!"),
+            password_hash=hash_password("Cabine2026!"),
             role="superadmin",
             status="active",
             email_verified=True,
@@ -68,7 +68,7 @@ def _seed_initial_data(db: Session) -> None:
         )
         db.add(superadmin)
         print("=" * 60)
-        print("SUPERADMIN CRIADO  →  email: gmakdesiy@gmail.com  |  senha: HiringEval2026!")
+        print("SUPERADMIN CRIADO  →  email: gmakdesiy@gmail.com  |  senha: Cabine2026!")
         print("Altere a senha após o primeiro login!")
         print("=" * 60)
 
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
 
 # ── App setup ──────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="HiringEval", lifespan=lifespan)
+app = FastAPI(title="Cabine", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")

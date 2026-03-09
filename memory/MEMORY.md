@@ -1,4 +1,4 @@
-# HiringEval MVP — Memory
+# Cabine MVP — Memory
 
 ## Stack
 - FastAPI + SQLite (SQLAlchemy ORM) + Jinja2 templates + Anthropic Claude

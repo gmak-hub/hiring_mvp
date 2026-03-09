@@ -1,4 +1,4 @@
-# HiringEval
+# Cabine
 
 Sistema de avaliação estruturada de candidatos com IA (Anthropic Claude).
 
@@ -6,7 +6,7 @@ Sistema de avaliação estruturada de candidatos com IA (Anthropic Claude).
 
 ## Visão Geral
 
-O HiringEval permite que equipes de RH:
+O Cabine permite que equipes de RH:
 - Criem cargos com descrições detalhadas
 - Gerem scorecards de avaliação automaticamente com IA
 - Submetam transcrições de entrevistas e recebam avaliações estruturadas
