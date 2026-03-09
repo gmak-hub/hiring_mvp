@@ -327,6 +327,49 @@ def _formatar_momentos(momentos: list[dict]) -> str:
     return "\n".join(linhas)
 
 
+# Minimum number of valid evidence items required to score a criterion.
+# If a scored criterion has fewer than this, it is demoted to sem_evidencia server-side.
+_MIN_EVIDENCIAS = 2
+
+
+def _evidencia_valida(ev) -> bool:
+    """Return True if an evidence item contains a real, non-trivial transcript excerpt."""
+    if not isinstance(ev, dict):
+        return False
+    trecho = ev.get("trecho", "").strip()
+    return len(trecho) > 10
+
+
+def _aplicar_minimo_evidencias(av: dict) -> dict:
+    """Enforce the minimum evidence rule on a single scored avaliacao.
+
+    If the criterion is already sem_evidencia, it is returned unchanged.
+    If it is scored but has fewer than _MIN_EVIDENCIAS valid evidence items,
+    it is converted to sem_evidencia with an explanatory motivo.
+    """
+    if av.get("sem_evidencia"):
+        return av
+
+    validas = [ev for ev in (av.get("evidencias") or []) if _evidencia_valida(ev)]
+    if len(validas) >= _MIN_EVIDENCIAS:
+        return av
+
+    nome_c = av.get("criterio", "este critério")
+    return {
+        "criterio": av["criterio"],
+        "peso": av["peso"],
+        "sem_evidencia": True,
+        "motivo": (
+            f"Apenas {len(validas)} evidência(s) com trecho explícito encontrada(s) "
+            f"para {nome_c}. São necessárias no mínimo {_MIN_EVIDENCIAS} para gerar uma nota."
+        ),
+        "evidencia_esperada": (
+            av.get("lacunas")
+            or "Mais trechos diretos da entrevista demonstrando este comportamento."
+        ),
+    }
+
+
 def _normalizar_pesos_inplace(criterios: list) -> None:
     """Normalize criterion weights so they sum to exactly 100 (in-place)."""
     total = sum(c["peso"] for c in criterios)
@@ -777,6 +820,8 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
     else:
         dados["contribuicao"] = round((dados["nota"] * peso_c) / 5, 1)
         dados["evidencias"] = _ordenar_evidencias(dados.get("evidencias") or [])
+        # Server-side guard: demote to sem_evidencia if evidence count is below minimum
+        dados = _aplicar_minimo_evidencias(dados)
 
     return dados
 
@@ -879,16 +924,21 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
         print(f"[AI PARSING ERROR] Resposta bruta da avaliação:\n{texto}")
         raise AIParsingError(f"A IA retornou JSON inválido na avaliação: {e}") from e
 
-    # Server-side: recalculate contributions and sort evidence; skip sem_evidencia entries
+    # Server-side: recalculate contributions, sort evidence, enforce minimum evidence rule
+    avaliacoes_processadas = []
     for av in dados["avaliacoes"]:
         if av.get("sem_evidencia"):
             av.pop("nota", None)
             av.pop("contribuicao", None)
             av.pop("evidencias", None)
             av.pop("lacunas", None)
+            avaliacoes_processadas.append(av)
         else:
             av["contribuicao"] = round((av["nota"] * av["peso"]) / 5, 1)
             av["evidencias"] = _ordenar_evidencias(av.get("evidencias") or [])
+            # Demote to sem_evidencia if evidence count is below the required minimum
+            avaliacoes_processadas.append(_aplicar_minimo_evidencias(av))
+    dados["avaliacoes"] = avaliacoes_processadas
 
     # Normalize nota_final to 0–100 using only scored criteria
     scored = [av for av in dados["avaliacoes"] if not av.get("sem_evidencia")]
