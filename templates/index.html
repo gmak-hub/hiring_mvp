@@ -41,6 +41,9 @@
         {% if user.role == 'superadmin' and cargo.company %}
           <span class="badge badge-blue">{{ cargo.company.name }}</span>
         {% endif %}
+        {% if cargo.responsavel %}
+          <span class="badge badge-blue">{{ cargo.responsavel.name }}</span>
+        {% endif %}
         {% if cargo.created_by %}
           <span class="badge badge-purple" title="Criado por {{ cargo.created_by.name }}">{{ cargo.created_by.name }}</span>
         {% endif %}
@@ -53,9 +56,6 @@
       </div>
     </div>
     <div style="display:flex; gap:1.5rem; margin-bottom:0.5rem; font-size:0.875rem; color:var(--text-muted);">
-      {% if cargo.responsavel %}
-        <span>Responsável: <strong style="color:var(--text);">{{ cargo.responsavel.name }}</strong></span>
-      {% endif %}
       <span>{{ active_count }} candidato(s)</span>
     </div>
     <p class="description-preview">{{ cargo.description }}</p>
