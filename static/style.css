@@ -165,6 +165,7 @@ a:hover { text-decoration: underline; }
 .badge-yellow { background: #fef9c3; color: #92400e; }
 .badge-red    { background: #fee2e2; color: #dc2626; }
 .badge-gray   { background: #f1f5f9; color: #64748b; }
+.badge-purple { background: #ede9fe; color: #6d28d9; }
 
 /* ── Forms ──────────────────────────────────────────── */
 .form {

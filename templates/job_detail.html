@@ -50,11 +50,43 @@
   <div class="msg msg-error">
     <strong>Erro na transcrição do vídeo.</strong> O arquivo pode estar corrompido, sem áudio audível, ou o servidor não pôde processar. Tente novamente ou use a transcrição manual.
   </div>
+{% elif msg == 'responsavel_atualizado' %}
+  <div class="msg msg-success">✓ Responsável atualizado com sucesso.</div>
 {% elif msg == 'erro' or msg == 'erro_avaliacao' %}
   <div class="msg msg-error">
     <strong>Erro inesperado.</strong> Verifique os logs do servidor para mais detalhes.
   </div>
 {% endif %}
+
+<!-- Responsável pela Vaga -->
+<div class="section" style="padding-bottom:0.75rem;">
+  <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+    <div style="font-size:0.875rem; color:var(--text-muted);">
+      Responsável:
+      <strong style="color:var(--text);">
+        {% if job.responsavel %}{{ job.responsavel.name }}{% else %}—{% endif %}
+      </strong>
+    </div>
+    {% if job.created_by %}
+    <div style="font-size:0.875rem; color:var(--text-muted);">
+      Criado por:
+      <span class="badge badge-purple" style="font-size:0.8rem;">{{ job.created_by.name }}</span>
+    </div>
+    {% endif %}
+    {% if usuarios_empresa %}
+    <form method="post" action="/cargos/{{ job.id }}/responsavel" class="inline-form"
+          style="display:flex; gap:0.5rem; align-items:center;">
+      <select name="responsavel_user_id"
+              style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.6rem;color:var(--text);font-size:0.8125rem;cursor:pointer;">
+        {% for u in usuarios_empresa %}
+        <option value="{{ u.id }}" {% if u.id == job.responsavel_user_id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm btn-ghost">Alterar</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
 
 <!-- Descrição da Vaga -->
 <div class="section">

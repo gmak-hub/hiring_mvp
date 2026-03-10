@@ -89,6 +89,7 @@ class User(Base):
 
     company = relationship("Company", back_populates="users")
     created_jobs = relationship("Job", back_populates="created_by", foreign_keys="Job.created_by_user_id")
+    responsible_jobs = relationship("Job", back_populates="responsavel", foreign_keys="Job.responsavel_user_id")
 
 
 class Job(Base):
@@ -97,6 +98,7 @@ class Job(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    responsavel_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     scorecard = Column(JSON, nullable=True)
@@ -106,6 +108,7 @@ class Job(Base):
 
     company = relationship("Company", back_populates="jobs")
     created_by = relationship("User", back_populates="created_jobs", foreign_keys="Job.created_by_user_id")
+    responsavel = relationship("User", back_populates="responsible_jobs", foreign_keys="Job.responsavel_user_id")
     candidates = relationship("Candidate", back_populates="job", cascade="all, delete-orphan")
 
 
@@ -176,6 +179,13 @@ def _migrate_db():
                     )
                     WHERE j.created_by_user_id IS NULL
                       AND j.company_id IS NOT NULL
+                """))
+            if "responsavel_user_id" not in cols:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN responsavel_user_id INTEGER REFERENCES users(id)"))
+                # Backfill: responsável starts as the creator of the job.
+                conn.execute(text("""
+                    UPDATE jobs SET responsavel_user_id = created_by_user_id
+                    WHERE responsavel_user_id IS NULL AND created_by_user_id IS NOT NULL
                 """))
 
         # ── candidates ────────────────────────────────────────────────────────

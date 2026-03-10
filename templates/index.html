@@ -42,12 +42,7 @@
           <span class="badge badge-blue">{{ cargo.company.name }}</span>
         {% endif %}
         {% if cargo.created_by %}
-          <span class="badge badge-gray" title="Publicado por {{ cargo.created_by.name }}">{{ cargo.created_by.name }}</span>
-        {% endif %}
-        {% if cargo.scorecard %}
-          <span class="badge badge-green">Scorecard gerado</span>
-        {% else %}
-          <span class="badge badge-gray">Sem scorecard</span>
+          <span class="badge badge-purple" title="Criado por {{ cargo.created_by.name }}">{{ cargo.created_by.name }}</span>
         {% endif %}
         {% if user.role in ('admin', 'superadmin') %}
           <form method="post" action="/cargos/{{ cargo.id }}/excluir" class="inline-form"
@@ -57,9 +52,15 @@
         {% endif %}
       </div>
     </div>
+    <div style="display:flex; gap:1.5rem; margin-bottom:0.5rem; font-size:0.875rem; color:var(--text-muted);">
+      {% if cargo.responsavel %}
+        <span>Responsável: <strong style="color:var(--text);">{{ cargo.responsavel.name }}</strong></span>
+      {% endif %}
+      <span>{{ active_count }} candidato(s)</span>
+    </div>
     <p class="description-preview">{{ cargo.description }}</p>
     <div class="card-footer">
-      <span>{{ active_count }} candidato(s)</span>
+      <span></span>
       <a href="/cargos/{{ cargo.id }}" class="btn btn-sm btn-ghost">Ver →</a>
     </div>
   </div>

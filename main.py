@@ -540,6 +540,7 @@ def criar_cargo(
         description=description.strip(),
         company_id=_company_id,
         created_by_user_id=current_user.id,
+        responsavel_user_id=current_user.id,
     )
     db.add(cargo)
     db.commit()
@@ -559,10 +560,37 @@ def detalhe_cargo(
     if not cargo:
         return RedirectResponse(url="/", status_code=303)
     active_candidates = [c for c in cargo.candidates if not c.is_deleted]
+    usuarios_empresa = []
+    if cargo.company_id:
+        usuarios_empresa = (
+            db.query(User)
+            .filter(User.company_id == cargo.company_id, User.status == "active")
+            .order_by(User.name)
+            .all()
+        )
     return templates.TemplateResponse(
         "job_detail.html",
-        ctx(request, current_user, job=cargo, active_candidates=active_candidates, msg=msg),
+        ctx(request, current_user, job=cargo, active_candidates=active_candidates, msg=msg, usuarios_empresa=usuarios_empresa),
     )
+
+
+@app.post("/cargos/{cargo_id}/responsavel")
+def atualizar_responsavel(
+    cargo_id: int,
+    responsavel_user_id: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cargo = _get_job(db, cargo_id, current_user)
+    if not cargo:
+        return RedirectResponse(url="/", status_code=303)
+    novo_id = int(responsavel_user_id)
+    # Ensure the chosen user belongs to the same company
+    novo_responsavel = db.query(User).filter(User.id == novo_id, User.company_id == cargo.company_id).first()
+    if novo_responsavel:
+        cargo.responsavel_user_id = novo_id
+        db.commit()
+    return RedirectResponse(url=f"/cargos/{cargo_id}?msg=responsavel_atualizado", status_code=303)
 
 
 @app.post("/cargos/{cargo_id}/gerar-scorecard")
