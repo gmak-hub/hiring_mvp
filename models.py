@@ -164,29 +164,43 @@ def _migrate_db():
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN deleted_at TIMESTAMP"))
             if "created_by_user_id" not in cols:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN created_by_user_id INTEGER REFERENCES users(id)"))
-                # Backfill: assign each job to the oldest admin of its company,
-                # falling back to the oldest user of that company.
-                conn.execute(text("""
-                    UPDATE jobs j
-                    SET created_by_user_id = (
-                        SELECT u.id FROM users u
-                        WHERE u.company_id = j.company_id
-                          AND u.status != 'blocked'
-                        ORDER BY
-                            CASE WHEN u.role = 'admin' THEN 0 ELSE 1 END,
-                            u.created_at ASC
-                        LIMIT 1
-                    )
-                    WHERE j.created_by_user_id IS NULL
-                      AND j.company_id IS NOT NULL
-                """))
             if "responsavel_user_id" not in cols:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN responsavel_user_id INTEGER REFERENCES users(id)"))
-                # Backfill: responsável starts as the creator of the job.
-                conn.execute(text("""
-                    UPDATE jobs SET responsavel_user_id = created_by_user_id
-                    WHERE responsavel_user_id IS NULL AND created_by_user_id IS NOT NULL
-                """))
+
+            # ── Always-run backfills (idempotent — only fill NULLs) ─────────
+            # 1. Jobs linked to a company: assign oldest active admin (or user) of that company.
+            conn.execute(text("""
+                UPDATE jobs j
+                SET created_by_user_id = (
+                    SELECT u.id FROM users u
+                    WHERE u.company_id = j.company_id
+                      AND u.status != 'blocked'
+                    ORDER BY
+                        CASE WHEN u.role = 'admin' THEN 0 ELSE 1 END,
+                        u.created_at ASC
+                    LIMIT 1
+                )
+                WHERE j.created_by_user_id IS NULL
+                  AND j.company_id IS NOT NULL
+            """))
+            # 2. Jobs with no company (superadmin-created): assign the oldest superadmin.
+            conn.execute(text("""
+                UPDATE jobs j
+                SET created_by_user_id = (
+                    SELECT u.id FROM users u
+                    WHERE u.role = 'superadmin'
+                      AND u.status != 'blocked'
+                    ORDER BY u.created_at ASC
+                    LIMIT 1
+                )
+                WHERE j.created_by_user_id IS NULL
+                  AND j.company_id IS NULL
+            """))
+            # 3. Responsável defaults to the creator when not explicitly set.
+            conn.execute(text("""
+                UPDATE jobs SET responsavel_user_id = created_by_user_id
+                WHERE responsavel_user_id IS NULL AND created_by_user_id IS NOT NULL
+            """))
 
         # ── candidates ────────────────────────────────────────────────────────
         if "candidates" in existing_tables:
