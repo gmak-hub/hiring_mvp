@@ -35,7 +35,7 @@
     {% elif prompt.name == 'avaliar_candidato' %}
       <code>{nome_candidato}</code>, <code>{texto_criterios}</code>, <code>{numerada}</code>
     {% endif %}
-    — Use <code>{{</code> e <code>}}</code> para chaves literais no JSON de exemplo.
+    — Use <code>{{ '{{' }}</code> e <code>{{ '}}' }}</code> para chaves literais no JSON de exemplo.
   </div>
 
   <form method="post" action="/admin/prompts/{{ prompt.name }}/editar">
