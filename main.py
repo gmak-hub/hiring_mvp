@@ -30,7 +30,7 @@ from auth import (
     require_superadmin,
     verify_password,
 )
-from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db
+from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db, seed_prompts
 
 SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "hiring-eval-secret-key-change-in-production")
 
@@ -308,27 +308,21 @@ def _seed_initial_data(db: Session) -> None:
         print("Altere a senha após o primeiro login!")
         print("=" * 60)
 
-    # Seed AI prompts (only insert if not already present — never overwrite edits)
-    _PROMPTS_SEED = [
-        ("gerar_scorecard", _PROMPT_GERAR_SCORECARD),
-        ("regenerar_criterio_ia", _PROMPT_REGENERAR_CRITERIO),
-        ("gerar_rubrica_criterio", _PROMPT_GERAR_RUBRICA),
-        ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
-    ]
-    inserted = 0
-    for name, text in _PROMPTS_SEED:
-        if not db.query(Prompt).filter(Prompt.name == name).first():
-            db.add(Prompt(name=name, prompt_text=text, version=1))
-            inserted += 1
-    db.commit()
-    print(f"[SEED] Prompts de IA: {inserted} inserido(s), {len(_PROMPTS_SEED) - inserted} já existia(m).")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[STARTUP] Criando/verificando tabelas...")
     create_tables()
-    print("[STARTUP] Tabelas OK. Executando seed...")
+    print("[STARTUP] Tabelas OK. Semeando prompts de IA...")
+    inserted = seed_prompts([
+        ("gerar_scorecard", _PROMPT_GERAR_SCORECARD),
+        ("regenerar_criterio_ia", _PROMPT_REGENERAR_CRITERIO),
+        ("gerar_rubrica_criterio", _PROMPT_GERAR_RUBRICA),
+        ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
+    ])
+    print(f"[STARTUP] Prompts: {inserted} inserido(s) via direct engine.")
+    print("[STARTUP] Executando seed de dados...")
     db = SessionLocal()
     try:
         _seed_initial_data(db)

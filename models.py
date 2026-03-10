@@ -261,6 +261,35 @@ def _migrate_db():
         conn.commit()
 
 
+def seed_prompts(prompts_data: list[tuple[str, str]]) -> int:
+    """
+    Idempotently insert default AI prompts via the direct engine.
+
+    Uses raw SQL INSERT ... ON CONFLICT DO NOTHING so that:
+    - It runs through the same connection as DDL (no PgBouncer lag)
+    - It never overwrites prompts that have already been edited
+    - It is safe to call on every restart
+
+    Returns the number of rows actually inserted.
+    """
+    from sqlalchemy import text
+
+    inserted = 0
+    with _direct_engine.connect() as conn:
+        for name, prompt_text in prompts_data:
+            result = conn.execute(
+                text(
+                    "INSERT INTO prompts (name, prompt_text, version, updated_at) "
+                    "VALUES (:name, :prompt_text, 1, NOW()) "
+                    "ON CONFLICT (name) DO NOTHING"
+                ),
+                {"name": name, "prompt_text": prompt_text},
+            )
+            inserted += result.rowcount
+        conn.commit()
+    return inserted
+
+
 def create_tables():
     Base.metadata.create_all(bind=_direct_engine)
     _migrate_db()
