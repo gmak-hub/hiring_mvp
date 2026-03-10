@@ -44,9 +44,6 @@
         {% if cargo.responsavel %}
           <span class="badge badge-blue">{{ cargo.responsavel.name }}</span>
         {% endif %}
-        {% if cargo.created_by %}
-          <span class="badge badge-purple" title="Criado por {{ cargo.created_by.name }}">{{ cargo.created_by.name }}</span>
-        {% endif %}
         {% if user.role in ('admin', 'superadmin') %}
           <form method="post" action="/cargos/{{ cargo.id }}/excluir" class="inline-form"
                 onsubmit="return confirm('Excluir o cargo {{ cargo.name }}? Esta ação pode ser revertida pelo administrador do sistema.')">
