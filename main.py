@@ -30,7 +30,7 @@ from auth import (
     require_superadmin,
     verify_password,
 )
-from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db, migrate_prompts_split_technical, seed_prompts
+from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db, migrate_prompts_remove_variables, migrate_prompts_split_technical, seed_prompts
 
 SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "hiring-eval-secret-key-change-in-production")
 
@@ -47,11 +47,7 @@ def _load_prompt(db: Session, name: str) -> str | None:
 
 _PROMPT_GERAR_SCORECARD = """\
 Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
-Sua tarefa é criar um scorecard de entrevista para o cargo abaixo.
-
-Cargo: {nome_cargo}
-Descrição da Vaga:
-{descricao_vaga}
+Sua tarefa é criar um scorecard de entrevista para o cargo acima.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PASSO 1 — ANALISE A VAGA ANTES DE GERAR OS CRITÉRIOS
@@ -102,36 +98,22 @@ As descrições devem funcionar independentemente do setor, tamanho de empresa o
 
 _PROMPT_REGENERAR_CRITERIO = """\
 Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
-Você está atualizando um scorecard de entrevista. Precisa gerar UM NOVO critério comportamental para substituir um existente.
+Você está atualizando um scorecard de entrevista. Precisa gerar UM NOVO critério comportamental para substituir o critério anterior indicado acima.
 
-Cargo: {nome_cargo}
-Descrição da Vaga:
-{descricao_vaga}
-
-CRITÉRIO ANTERIOR A SER SUBSTITUÍDO: "{criterio_anterior}"
-IMPORTANTE: O novo critério deve ser DIFERENTE e NÃO PARECIDO com "{criterio_anterior}".
+O novo critério deve ser DIFERENTE e NÃO PARECIDO com o critério anterior.
 Deve representar um conceito comportamental distinto — não o mesmo tema com outras palavras.
-
-Os outros 4 critérios já definidos no scorecard (NÃO repita nenhum destes nem o critério anterior):
-{outros_nomes}
 
 Gere EXATAMENTE 1 critério comportamental novo.
 
 REGRAS ABSOLUTAS:
 ✗ PROIBIDO: hard skills técnicas, ferramentas, linguagens, certificações, idiomas
-✗ PROIBIDO: repetir ou reescrever "{criterio_anterior}" com sinônimos
+✗ PROIBIDO: repetir ou reescrever o critério anterior com sinônimos
+✗ PROIBIDO: usar qualquer um dos outros critérios já definidos no scorecard (listados acima)
 ✓ OBRIGATÓRIO: comportamento observável, soft skill, fit cultural — diferente dos existentes"""
 
 _PROMPT_GERAR_RUBRICA = """\
 Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
-Gere a rubrica de avaliação para o critério comportamental abaixo, no contexto deste cargo.
-
-Cargo: {nome_cargo}
-Descrição da Vaga:
-{descricao_vaga}
-
-Critério a descrever: {nome_criterio}
-(Outros critérios do scorecard para contexto: {outros_str})
+Gere a rubrica de avaliação para o critério comportamental indicado acima, no contexto deste cargo.
 
 REGRAS:
 - Descreva comportamentos observáveis e específicos para este cargo
@@ -139,15 +121,7 @@ REGRAS:
 - Escala: 1=ausente, 2=fraco, 3=adequado, 4=forte, 5=excepcional"""
 
 _PROMPT_AVALIAR_CANDIDATO = """\
-Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
-
-Candidato: {nome_candidato}
-
-=== SCORECARD ===
-{texto_criterios}
-
-=== TRANSCRIÇÃO (com número de linhas) ===
-{numerada}
+Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato acima com base no scorecard e na transcrição fornecidos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTRUÇÕES — LEIA COM ATENÇÃO
@@ -223,6 +197,14 @@ async def lifespan(app: FastAPI):
     ])
     if migrated:
         print(f"[STARTUP] Prompts migrados para formato split: {migrated} atualizado(s).")
+    migrated_vars = migrate_prompts_remove_variables([
+        ("gerar_scorecard", _PROMPT_GERAR_SCORECARD),
+        ("regenerar_criterio_ia", _PROMPT_REGENERAR_CRITERIO),
+        ("gerar_rubrica_criterio", _PROMPT_GERAR_RUBRICA),
+        ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
+    ])
+    if migrated_vars:
+        print(f"[STARTUP] Prompts migrados para formato sem variáveis: {migrated_vars} atualizado(s).")
     print("[STARTUP] Executando seed de dados...")
     db = SessionLocal()
     try:

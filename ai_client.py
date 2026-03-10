@@ -89,21 +89,21 @@ Liderança/5: "Explica como influenciou o grupo sem autoridade formal, descreve 
 → Avalia o pensamento, não o histórico.
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
-{{
+{
   "criterios": [
-    {{
+    {
       "nome": "UmaPalavra",
       "peso": 20,
-      "rubrica": {{
+      "rubrica": {
         "1": "Sinal observável na resposta — nível 1 (máx 200 caracteres)",
         "2": "Sinal observável na resposta — nível 2 (máx 200 caracteres)",
         "3": "Sinal observável na resposta — nível 3 (máx 200 caracteres)",
         "4": "Sinal observável na resposta — nível 4 (máx 200 caracteres)",
         "5": "Sinal observável na resposta — nível 5 (máx 200 caracteres)"
-      }}
-    }}
+      }
+    }
   ]
-}}"""
+}"""
 
 _FORMAT_REGENERAR_CRITERIO = """\
 FORMATO DE SAÍDA:
@@ -143,23 +143,23 @@ FORMATOS DOS OBJETOS DE AVALIAÇÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Objeto COM nota (quando há evidência para avaliar):
-{{
+{
   "criterio": "NomeDoCriterio",
   "nota": 3,
   "peso": 20,
   "contribuicao": 12.0,
   "evidencias": ["[12] 'citação exata da linha 12'"],
   "lacunas": "O que não foi demonstrado"
-}}
+}
 
 Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
-{{
+{
   "criterio": "NomeDoCriterio",
   "peso": 20,
   "sem_evidencia": true,
   "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
   "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
-}}
+}
 
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
@@ -168,11 +168,11 @@ Regras adicionais para objetos COM nota:
 - lacunas: o que ficou ausente ou não foi demonstrado
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
-{{
+{
   "avaliacoes": [
-    {{ objeto com nota OU sem evidência para cada critério }}
+    { objeto com nota OU sem evidência para cada critério }
   ]
-}}"""
+}"""
 
 
 # ── Custom exceptions ──────────────────────────────────────────────────────────
@@ -430,11 +430,14 @@ def _chamar_api(prompt: str, max_tokens: int) -> str:
 
 def gerar_scorecard(nome_cargo: str, descricao_vaga: str, prompt_template: str | None = None) -> dict:
     if prompt_template is not None:
-        full_template = prompt_template + "\n\n" + _FORMAT_GERAR_SCORECARD
-        try:
-            prompt = full_template.format(nome_cargo=nome_cargo, descricao_vaga=descricao_vaga)
-        except (KeyError, IndexError, ValueError) as e:
-            raise AIParsingError(f"Prompt 'gerar_scorecard' contém variável inválida: {e}") from e
+        contexto = (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"CONTEXTO\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Cargo: {nome_cargo}\n"
+            f"Descrição da vaga:\n{descricao_vaga}"
+        )
+        prompt = contexto + "\n\n" + prompt_template + "\n\n" + _FORMAT_GERAR_SCORECARD
     else:
         prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
 Sua tarefa é criar um scorecard de entrevista para o cargo abaixo.
@@ -597,17 +600,17 @@ def regenerar_criterio_ia(
     outros_nomes_str = ', '.join(outros_nomes)
 
     if prompt_template is not None:
-        full_template = prompt_template + "\n\n" + _FORMAT_REGENERAR_CRITERIO
-        try:
-            prompt = full_template.format(
-                nome_cargo=nome_cargo,
-                descricao_vaga=descricao_vaga,
-                criterio_anterior=criterio_anterior,
-                outros_nomes=outros_nomes_str,
-                max_palavras=max_palavras,
-            )
-        except (KeyError, IndexError, ValueError) as e:
-            raise AIParsingError(f"Prompt 'regenerar_criterio_ia' contém variável inválida: {e}") from e
+        contexto = (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"CONTEXTO\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Cargo: {nome_cargo}\n"
+            f"Descrição da vaga:\n{descricao_vaga}\n\n"
+            f"Critério anterior a ser substituído: \"{criterio_anterior}\"\n"
+            f"Outros critérios já definidos no scorecard (não repita nenhum): {outros_nomes_str}"
+        )
+        format_block = _FORMAT_REGENERAR_CRITERIO.format(max_palavras=max_palavras)
+        prompt = contexto + "\n\n" + prompt_template + "\n\n" + format_block
     else:
         prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
 Você está atualizando um scorecard de entrevista. Precisa gerar UM NOVO critério comportamental para substituir um existente.
@@ -696,17 +699,17 @@ def gerar_rubrica_criterio(
     outros_str = ", ".join(outros_criterios) if outros_criterios else "N/A"
 
     if prompt_template is not None:
-        full_template = prompt_template + "\n\n" + _FORMAT_GERAR_RUBRICA
-        try:
-            prompt = full_template.format(
-                nome_cargo=nome_cargo,
-                descricao_vaga=descricao_vaga,
-                nome_criterio=nome_criterio,
-                outros_str=outros_str,
-                max_palavras=max_palavras,
-            )
-        except (KeyError, IndexError, ValueError) as e:
-            raise AIParsingError(f"Prompt 'gerar_rubrica_criterio' contém variável inválida: {e}") from e
+        contexto = (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"CONTEXTO\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Cargo: {nome_cargo}\n"
+            f"Descrição da vaga:\n{descricao_vaga}\n\n"
+            f"Critério a descrever: {nome_criterio}\n"
+            f"Outros critérios do scorecard para contexto: {outros_str}"
+        )
+        format_block = _FORMAT_GERAR_RUBRICA.format(max_palavras=max_palavras)
+        prompt = contexto + "\n\n" + prompt_template + "\n\n" + format_block
     else:
         prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
 Gere a rubrica de avaliação para o critério comportamental abaixo, no contexto deste cargo.
@@ -845,15 +848,15 @@ def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str, pr
     texto_criterios = "\n\n".join(blocos_criterio)
 
     if prompt_template is not None:
-        full_template = prompt_template + "\n\n" + _FORMAT_AVALIAR_CANDIDATO
-        try:
-            prompt = full_template.format(
-                nome_candidato=nome_candidato,
-                texto_criterios=texto_criterios,
-                numerada=numerada,
-            )
-        except (KeyError, IndexError, ValueError) as e:
-            raise AIParsingError(f"Prompt 'avaliar_candidato' contém variável inválida: {e}") from e
+        contexto = (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"CONTEXTO\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Candidato: {nome_candidato}\n\n"
+            f"=== SCORECARD ===\n{texto_criterios}\n\n"
+            f"=== TRANSCRIÇÃO (com número de linhas) ===\n{numerada}"
+        )
+        prompt = contexto + "\n\n" + prompt_template + "\n\n" + _FORMAT_AVALIAR_CANDIDATO
     else:
         prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
 

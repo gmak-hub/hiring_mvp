@@ -315,6 +315,37 @@ def migrate_prompts_split_technical(prompts_data: list[tuple[str, str]]) -> int:
     return updated
 
 
+def migrate_prompts_remove_variables(prompts_data: list[tuple[str, str]]) -> int:
+    """
+    One-time migration: replace prompts that still contain template variables (e.g. {nome_cargo})
+    with the new variable-free human-instructions-only text.
+
+    Only updates rows whose prompt_text still contains '{nome_cargo}' or '{nome_candidato}',
+    so admin-edited prompts (which no longer have those variables) are never touched.
+    Returns the number of rows actually updated.
+    """
+    from sqlalchemy import text
+
+    updated = 0
+    with _direct_engine.connect() as conn:
+        for name, prompt_text in prompts_data:
+            result = conn.execute(
+                text(
+                    "UPDATE prompts SET prompt_text = :prompt_text, updated_at = NOW() "
+                    "WHERE name = :name AND ("
+                    "  prompt_text LIKE '%{nome_cargo}%' OR "
+                    "  prompt_text LIKE '%{nome_candidato}%' OR "
+                    "  prompt_text LIKE '%{criterio_anterior}%' OR "
+                    "  prompt_text LIKE '%{nome_criterio}%'"
+                    ")"
+                ),
+                {"name": name, "prompt_text": prompt_text},
+            )
+            updated += result.rowcount
+        conn.commit()
+    return updated
+
+
 def create_tables():
     Base.metadata.create_all(bind=_direct_engine)
     _migrate_db()
