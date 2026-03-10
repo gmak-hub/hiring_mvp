@@ -290,6 +290,31 @@ def seed_prompts(prompts_data: list[tuple[str, str]]) -> int:
     return inserted
 
 
+def migrate_prompts_split_technical(prompts_data: list[tuple[str, str]]) -> int:
+    """
+    One-time migration: replace full prompts (human + JSON format) with human-only text.
+
+    Only updates rows that still contain the old marker 'Retorne APENAS JSON',
+    so it is safe to run on every restart — admin-edited prompts are never touched.
+    Returns the number of rows actually updated.
+    """
+    from sqlalchemy import text
+
+    updated = 0
+    with _direct_engine.connect() as conn:
+        for name, prompt_text in prompts_data:
+            result = conn.execute(
+                text(
+                    "UPDATE prompts SET prompt_text = :prompt_text, updated_at = NOW() "
+                    "WHERE name = :name AND prompt_text LIKE '%Retorne APENAS JSON%'"
+                ),
+                {"name": name, "prompt_text": prompt_text},
+            )
+            updated += result.rowcount
+        conn.commit()
+    return updated
+
+
 def create_tables():
     Base.metadata.create_all(bind=_direct_engine)
     _migrate_db()

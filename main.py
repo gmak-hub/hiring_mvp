@@ -30,7 +30,7 @@ from auth import (
     require_superadmin,
     verify_password,
 )
-from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db, seed_prompts
+from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db, migrate_prompts_split_technical, seed_prompts
 
 SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "hiring-eval-secret-key-change-in-production")
 
@@ -98,49 +98,7 @@ Cada nível da rubrica deve descrever SINAIS OBSERVÁVEIS NA RESPOSTA DO CANDIDA
 - Qualidade e pertinência dos exemplos usados para sustentar o argumento
 - Profundidade da reflexão e consciência das implicações e trade-offs
 
-As descrições devem funcionar independentemente do setor, tamanho de empresa ou cargo anterior do candidato.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGRAS DE FORMATO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Retorne EXATAMENTE 5 critérios — nem mais, nem menos.
-2. Cada critério deve medir uma DIMENSÃO COMPORTAMENTAL DIFERENTE (sem critérios parecidos ou redundantes).
-3. O nome de cada critério deve ser EXATAMENTE UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução").
-4. Os pesos devem ser números inteiros que somem EXATAMENTE 100.
-5. Cada descrição de nível deve ter NO MÁXIMO 200 caracteres.
-6. Os níveis devem mostrar PROGRESSÃO REAL de comportamento — não apenas variações de intensidade como "fraco / médio / forte".
-
-Escala da rubrica (cada nível descreve um sinal observável na resposta):
-1 = Resposta vaga, sem estrutura ou sem exemplos; não demonstra o comportamento
-2 = Demonstração superficial ou inconsistente; exemplos genéricos ou sem profundidade
-3 = Demonstra o comportamento com clareza em pelo menos um exemplo concreto e bem explicado
-4 = Demonstra com consistência, estrutura clara e reflexão sobre impactos, alternativas ou aprendizados
-5 = Raciocínio estruturado, exemplos pertinentes e consciência de implicações complexas ou de longo prazo
-
-EXEMPLO RUIM (PROIBIDO):
-Liderança/5: "Liderou equipe com múltiplos níveis de reporte e implementou OKRs."
-→ Exige experiência específica; candidato de empresa pequena será penalizado injustamente.
-
-EXEMPLO BOM:
-Liderança/5: "Explica como influenciou o grupo sem autoridade formal, descreve o raciocínio por trás das decisões e os impactos percebidos."
-→ Avalia o pensamento, não o histórico.
-
-Retorne APENAS JSON válido (sem markdown, sem explicação):
-{{
-  "criterios": [
-    {{
-      "nome": "UmaPalavra",
-      "peso": 20,
-      "rubrica": {{
-        "1": "Sinal observável na resposta — nível 1 (máx 200 caracteres)",
-        "2": "Sinal observável na resposta — nível 2 (máx 200 caracteres)",
-        "3": "Sinal observável na resposta — nível 3 (máx 200 caracteres)",
-        "4": "Sinal observável na resposta — nível 4 (máx 200 caracteres)",
-        "5": "Sinal observável na resposta — nível 5 (máx 200 caracteres)"
-      }}
-    }}
-  ]
-}}"""
+As descrições devem funcionar independentemente do setor, tamanho de empresa ou cargo anterior do candidato."""
 
 _PROMPT_REGENERAR_CRITERIO = """\
 Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
@@ -162,24 +120,7 @@ Gere EXATAMENTE 1 critério comportamental novo.
 REGRAS ABSOLUTAS:
 ✗ PROIBIDO: hard skills técnicas, ferramentas, linguagens, certificações, idiomas
 ✗ PROIBIDO: repetir ou reescrever "{criterio_anterior}" com sinônimos
-✓ OBRIGATÓRIO: comportamento observável, soft skill, fit cultural — diferente dos existentes
-
-FORMATO:
-- nome: UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução")
-- rubrica: 5 níveis descritivos e específicos para este cargo
-- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
-
-Retorne APENAS JSON válido (sem markdown, sem explicação):
-{{
-  "nome": "UmaPalavra",
-  "rubrica": {{
-    "1": "Descrição observável específica nível 1",
-    "2": "Descrição observável específica nível 2",
-    "3": "Descrição observável específica nível 3",
-    "4": "Descrição observável específica nível 4",
-    "5": "Descrição observável específica nível 5"
-  }}
-}}"""
+✓ OBRIGATÓRIO: comportamento observável, soft skill, fit cultural — diferente dos existentes"""
 
 _PROMPT_GERAR_RUBRICA = """\
 Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
@@ -195,19 +136,7 @@ Critério a descrever: {nome_criterio}
 REGRAS:
 - Descreva comportamentos observáveis e específicos para este cargo
 - Cada nível deve ser distinto e claro
-- Escala: 1=ausente, 2=fraco, 3=adequado, 4=forte, 5=excepcional
-- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
-
-Retorne APENAS JSON válido (sem markdown, sem explicação):
-{{
-  "rubrica": {{
-    "1": "Descrição observável nível 1",
-    "2": "Descrição observável nível 2",
-    "3": "Descrição observável nível 3",
-    "4": "Descrição observável nível 4",
-    "5": "Descrição observável nível 5"
-  }}
-}}"""
+- Escala: 1=ausente, 2=fraco, 3=adequado, 4=forte, 5=excepcional"""
 
 _PROMPT_AVALIAR_CANDIDATO = """\
 Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
@@ -234,43 +163,7 @@ SE NÃO houver evidência suficiente → NÃO atribua nota (use o objeto "sem ev
 
 REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
 Não invente contexto. Não assuma comportamentos não descritos na transcrição.
-Só cite linhas que realmente existem na transcrição.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FORMATOS DOS OBJETOS DE AVALIAÇÃO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Objeto COM nota (quando há evidência para avaliar):
-{{
-  "criterio": "NomeDoCriterio",
-  "nota": 3,
-  "peso": 20,
-  "contribuicao": 12.0,
-  "evidencias": ["[12] 'citação exata da linha 12'"],
-  "lacunas": "O que não foi demonstrado"
-}}
-
-Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
-{{
-  "criterio": "NomeDoCriterio",
-  "peso": 20,
-  "sem_evidencia": true,
-  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
-  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
-}}
-
-Regras adicionais para objetos COM nota:
-- nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
-- contribuicao = (nota × peso) / 5
-- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
-- lacunas: o que ficou ausente ou não foi demonstrado
-
-Retorne APENAS JSON válido (sem markdown, sem explicação):
-{{
-  "avaliacoes": [
-    {{ objeto com nota OU sem evidência para cada critério }}
-  ]
-}}"""
+Só cite linhas que realmente existem na transcrição."""
 
 
 def _seed_initial_data(db: Session) -> None:
@@ -322,6 +215,14 @@ async def lifespan(app: FastAPI):
         ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
     ])
     print(f"[STARTUP] Prompts: {inserted} inserido(s) via direct engine.")
+    migrated = migrate_prompts_split_technical([
+        ("gerar_scorecard", _PROMPT_GERAR_SCORECARD),
+        ("regenerar_criterio_ia", _PROMPT_REGENERAR_CRITERIO),
+        ("gerar_rubrica_criterio", _PROMPT_GERAR_RUBRICA),
+        ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
+    ])
+    if migrated:
+        print(f"[STARTUP] Prompts migrados para formato split: {migrated} atualizado(s).")
     print("[STARTUP] Executando seed de dados...")
     db = SessionLocal()
     try:

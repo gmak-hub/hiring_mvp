@@ -58,6 +58,123 @@ _PALAVRAS_TECNICAS = frozenset({
 })
 
 
+# ── Fixed technical format specs (never shown in the prompt editor) ────────────
+# Each function appends its format block to the human-editable prompt from the DB.
+# Use {{ / }} for literal braces (these strings go through .format()).
+
+_FORMAT_GERAR_SCORECARD = """\
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGRAS DE FORMATO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Retorne EXATAMENTE 5 critérios — nem mais, nem menos.
+2. Cada critério deve medir uma DIMENSÃO COMPORTAMENTAL DIFERENTE (sem critérios parecidos ou redundantes).
+3. O nome de cada critério deve ser EXATAMENTE UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução").
+4. Os pesos devem ser números inteiros que somem EXATAMENTE 100.
+5. Cada descrição de nível deve ter NO MÁXIMO 200 caracteres.
+6. Os níveis devem mostrar PROGRESSÃO REAL de comportamento — não apenas variações de intensidade como "fraco / médio / forte".
+
+Escala da rubrica (cada nível descreve um sinal observável na resposta):
+1 = Resposta vaga, sem estrutura ou sem exemplos; não demonstra o comportamento
+2 = Demonstração superficial ou inconsistente; exemplos genéricos ou sem profundidade
+3 = Demonstra o comportamento com clareza em pelo menos um exemplo concreto e bem explicado
+4 = Demonstra com consistência, estrutura clara e reflexão sobre impactos, alternativas ou aprendizados
+5 = Raciocínio estruturado, exemplos pertinentes e consciência de implicações complexas ou de longo prazo
+
+EXEMPLO RUIM (PROIBIDO):
+Liderança/5: "Liderou equipe com múltiplos níveis de reporte e implementou OKRs."
+→ Exige experiência específica; candidato de empresa pequena será penalizado injustamente.
+
+EXEMPLO BOM:
+Liderança/5: "Explica como influenciou o grupo sem autoridade formal, descreve o raciocínio por trás das decisões e os impactos percebidos."
+→ Avalia o pensamento, não o histórico.
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "criterios": [
+    {{
+      "nome": "UmaPalavra",
+      "peso": 20,
+      "rubrica": {{
+        "1": "Sinal observável na resposta — nível 1 (máx 200 caracteres)",
+        "2": "Sinal observável na resposta — nível 2 (máx 200 caracteres)",
+        "3": "Sinal observável na resposta — nível 3 (máx 200 caracteres)",
+        "4": "Sinal observável na resposta — nível 4 (máx 200 caracteres)",
+        "5": "Sinal observável na resposta — nível 5 (máx 200 caracteres)"
+      }}
+    }}
+  ]
+}}"""
+
+_FORMAT_REGENERAR_CRITERIO = """\
+FORMATO DE SAÍDA:
+- nome: UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução")
+- rubrica: 5 níveis descritivos e específicos para este cargo
+- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "nome": "UmaPalavra",
+  "rubrica": {{
+    "1": "Descrição observável específica nível 1",
+    "2": "Descrição observável específica nível 2",
+    "3": "Descrição observável específica nível 3",
+    "4": "Descrição observável específica nível 4",
+    "5": "Descrição observável específica nível 5"
+  }}
+}}"""
+
+_FORMAT_GERAR_RUBRICA = """\
+- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "rubrica": {{
+    "1": "Descrição observável nível 1",
+    "2": "Descrição observável nível 2",
+    "3": "Descrição observável nível 3",
+    "4": "Descrição observável nível 4",
+    "5": "Descrição observável nível 5"
+  }}
+}}"""
+
+_FORMAT_AVALIAR_CANDIDATO = """\
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMATOS DOS OBJETOS DE AVALIAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Objeto COM nota (quando há evidência para avaliar):
+{{
+  "criterio": "NomeDoCriterio",
+  "nota": 3,
+  "peso": 20,
+  "contribuicao": 12.0,
+  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "lacunas": "O que não foi demonstrado"
+}}
+
+Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
+{{
+  "criterio": "NomeDoCriterio",
+  "peso": 20,
+  "sem_evidencia": true,
+  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
+  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+}}
+
+Regras adicionais para objetos COM nota:
+- nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
+- contribuicao = (nota × peso) / 5
+- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- lacunas: o que ficou ausente ou não foi demonstrado
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "avaliacoes": [
+    {{ objeto com nota OU sem evidência para cada critério }}
+  ]
+}}"""
+
+
 # ── Custom exceptions ──────────────────────────────────────────────────────────
 
 class AIError(Exception):
@@ -313,8 +430,9 @@ def _chamar_api(prompt: str, max_tokens: int) -> str:
 
 def gerar_scorecard(nome_cargo: str, descricao_vaga: str, prompt_template: str | None = None) -> dict:
     if prompt_template is not None:
+        full_template = prompt_template + "\n\n" + _FORMAT_GERAR_SCORECARD
         try:
-            prompt = prompt_template.format(nome_cargo=nome_cargo, descricao_vaga=descricao_vaga)
+            prompt = full_template.format(nome_cargo=nome_cargo, descricao_vaga=descricao_vaga)
         except (KeyError, IndexError, ValueError) as e:
             raise AIParsingError(f"Prompt 'gerar_scorecard' contém variável inválida: {e}") from e
     else:
@@ -479,8 +597,9 @@ def regenerar_criterio_ia(
     outros_nomes_str = ', '.join(outros_nomes)
 
     if prompt_template is not None:
+        full_template = prompt_template + "\n\n" + _FORMAT_REGENERAR_CRITERIO
         try:
-            prompt = prompt_template.format(
+            prompt = full_template.format(
                 nome_cargo=nome_cargo,
                 descricao_vaga=descricao_vaga,
                 criterio_anterior=criterio_anterior,
@@ -577,8 +696,9 @@ def gerar_rubrica_criterio(
     outros_str = ", ".join(outros_criterios) if outros_criterios else "N/A"
 
     if prompt_template is not None:
+        full_template = prompt_template + "\n\n" + _FORMAT_GERAR_RUBRICA
         try:
-            prompt = prompt_template.format(
+            prompt = full_template.format(
                 nome_cargo=nome_cargo,
                 descricao_vaga=descricao_vaga,
                 nome_criterio=nome_criterio,
@@ -725,8 +845,9 @@ def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str, pr
     texto_criterios = "\n\n".join(blocos_criterio)
 
     if prompt_template is not None:
+        full_template = prompt_template + "\n\n" + _FORMAT_AVALIAR_CANDIDATO
         try:
-            prompt = prompt_template.format(
+            prompt = full_template.format(
                 nome_candidato=nome_candidato,
                 texto_criterios=texto_criterios,
                 numerada=numerada,
