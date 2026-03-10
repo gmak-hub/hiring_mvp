@@ -201,6 +201,17 @@ def _migrate_db():
                 UPDATE jobs SET responsavel_user_id = created_by_user_id
                 WHERE responsavel_user_id IS NULL AND created_by_user_id IS NOT NULL
             """))
+            # 4. Catch-all: any job still without a responsável gets the oldest superadmin.
+            conn.execute(text("""
+                UPDATE jobs SET responsavel_user_id = (
+                    SELECT u.id FROM users u
+                    WHERE u.role = 'superadmin'
+                      AND u.status != 'blocked'
+                    ORDER BY u.created_at ASC
+                    LIMIT 1
+                )
+                WHERE responsavel_user_id IS NULL
+            """))
 
         # ── candidates ────────────────────────────────────────────────────────
         if "candidates" in existing_tables:
