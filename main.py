@@ -476,20 +476,40 @@ def _reavaliar_criterios_alterados(cargo: "Job", scorecard: dict, pendentes: lis
 def pagina_inicial(
     request: Request,
     empresa_id: str = None,
+    usuario_id: str = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _empresa_id = int(empresa_id) if empresa_id else None
+    _usuario_id = int(usuario_id) if usuario_id else None
     q = db.query(Job).filter(Job.is_deleted == False)  # noqa: E712
-    if current_user.role != "superadmin":
+    if current_user.role == "superadmin":
+        if _empresa_id:
+            q = q.filter(Job.company_id == _empresa_id)
+    else:
         q = q.filter(Job.company_id == current_user.company_id)
-    elif _empresa_id:
-        q = q.filter(Job.company_id == _empresa_id)
+        if _usuario_id:
+            q = q.filter(Job.created_by_user_id == _usuario_id)
     cargos = q.order_by(Job.created_at.desc()).all()
     empresas = db.query(Company).order_by(Company.name).all() if current_user.role == "superadmin" else []
+    usuarios_empresa = []
+    if current_user.role == "admin":
+        usuarios_empresa = (
+            db.query(User)
+            .filter(User.company_id == current_user.company_id, User.status == "active")
+            .order_by(User.name)
+            .all()
+        )
     return templates.TemplateResponse(
         "index.html",
-        ctx(request, current_user, jobs=cargos, empresas=empresas, empresa_id=_empresa_id),
+        ctx(
+            request, current_user,
+            jobs=cargos,
+            empresas=empresas,
+            empresa_id=_empresa_id,
+            usuarios_empresa=usuarios_empresa,
+            usuario_id=_usuario_id,
+        ),
     )
 
 
@@ -519,6 +539,7 @@ def criar_cargo(
         name=name.strip(),
         description=description.strip(),
         company_id=_company_id,
+        created_by_user_id=current_user.id,
     )
     db.add(cargo)
     db.commit()

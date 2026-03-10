@@ -7,11 +7,22 @@
   <div style="display:flex; gap:0.75rem; align-items:center;">
     {% if user.role == 'superadmin' %}
     <form method="get" action="/" style="margin:0;">
-      <select name="empresa_id" onchange="this.value ? this.form.submit() : window.location.href='/'"
+      <select name="empresa_id" onchange="this.form.submit()"
               style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.75rem;color:var(--text);font-size:0.875rem;cursor:pointer;">
         <option value="">Todas as empresas</option>
         {% for empresa in empresas %}
         <option value="{{ empresa.id }}" {% if empresa.id == empresa_id %}selected{% endif %}>{{ empresa.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% endif %}
+    {% if user.role == 'admin' and usuarios_empresa %}
+    <form method="get" action="/" style="margin:0;">
+      <select name="usuario_id" onchange="this.form.submit()"
+              style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.75rem;color:var(--text);font-size:0.875rem;cursor:pointer;">
+        <option value="">Todos os usuários</option>
+        {% for u in usuarios_empresa %}
+        <option value="{{ u.id }}" {% if u.id == usuario_id %}selected{% endif %}>{{ u.name }}</option>
         {% endfor %}
       </select>
     </form>
@@ -29,6 +40,9 @@
       <div style="display:flex; gap:0.5rem; align-items:center;">
         {% if user.role == 'superadmin' and cargo.company %}
           <span class="badge badge-blue">{{ cargo.company.name }}</span>
+        {% endif %}
+        {% if cargo.created_by %}
+          <span class="badge badge-gray" title="Publicado por {{ cargo.created_by.name }}">{{ cargo.created_by.name }}</span>
         {% endif %}
         {% if cargo.scorecard %}
           <span class="badge badge-green">Scorecard gerado</span>

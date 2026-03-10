@@ -88,6 +88,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     company = relationship("Company", back_populates="users")
+    created_jobs = relationship("Job", back_populates="created_by", foreign_keys="Job.created_by_user_id")
 
 
 class Job(Base):
@@ -95,6 +96,7 @@ class Job(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     scorecard = Column(JSON, nullable=True)
@@ -103,6 +105,7 @@ class Job(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     company = relationship("Company", back_populates="jobs")
+    created_by = relationship("User", back_populates="created_jobs", foreign_keys="Job.created_by_user_id")
     candidates = relationship("Candidate", back_populates="job", cascade="all, delete-orphan")
 
 
@@ -156,6 +159,24 @@ def _migrate_db():
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE"))
             if "deleted_at" not in cols:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN deleted_at TIMESTAMP"))
+            if "created_by_user_id" not in cols:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN created_by_user_id INTEGER REFERENCES users(id)"))
+                # Backfill: assign each job to the oldest admin of its company,
+                # falling back to the oldest user of that company.
+                conn.execute(text("""
+                    UPDATE jobs j
+                    SET created_by_user_id = (
+                        SELECT u.id FROM users u
+                        WHERE u.company_id = j.company_id
+                          AND u.status != 'blocked'
+                        ORDER BY
+                            CASE WHEN u.role = 'admin' THEN 0 ELSE 1 END,
+                            u.created_at ASC
+                        LIMIT 1
+                    )
+                    WHERE j.created_by_user_id IS NULL
+                      AND j.company_id IS NOT NULL
+                """))
 
         # ── candidates ────────────────────────────────────────────────────────
         if "candidates" in existing_tables:
