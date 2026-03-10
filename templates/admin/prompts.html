@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Editor de Prompts — Cabine{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Editor de Prompts de IA</h1>
+  <a href="/admin" class="btn btn-ghost">← Voltar ao painel</a>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">Prompts ({{ prompts | length }})</span>
+  </div>
+  <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:1.25rem;">
+    Edite qualquer prompt e salve — a próxima execução da IA já usará o novo texto automaticamente.
+  </p>
+
+  {% if prompts %}
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>Versão</th>
+          <th>Última atualização</th>
+          <th>Ação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in prompts %}
+        <tr>
+          <td style="font-weight:600; font-family:monospace; font-size:0.875rem;">{{ p.name }}</td>
+          <td><span class="badge badge-gray">v{{ p.version }}</span></td>
+          <td class="text-muted" style="font-size:0.8125rem;">
+            {{ p.updated_at.strftime('%d/%m/%Y %H:%M') if p.updated_at else '—' }}
+          </td>
+          <td>
+            <a href="/admin/prompts/{{ p.name }}/editar" class="btn btn-sm btn-ghost">Editar</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="text-muted" style="font-size:0.875rem; padding:0.5rem 0;">Nenhum prompt encontrado.</p>
+  {% endif %}
+</div>
+{% endblock %}

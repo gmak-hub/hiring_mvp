@@ -311,8 +311,14 @@ def _chamar_api(prompt: str, max_tokens: int) -> str:
 
 # ── Public functions ───────────────────────────────────────────────────────────
 
-def gerar_scorecard(nome_cargo: str, descricao_vaga: str) -> dict:
-    prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+def gerar_scorecard(nome_cargo: str, descricao_vaga: str, prompt_template: str | None = None) -> dict:
+    if prompt_template is not None:
+        try:
+            prompt = prompt_template.format(nome_cargo=nome_cargo, descricao_vaga=descricao_vaga)
+        except (KeyError, IndexError, ValueError) as e:
+            raise AIParsingError(f"Prompt 'gerar_scorecard' contém variável inválida: {e}") from e
+    else:
+        prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
 Sua tarefa é criar um scorecard de entrevista para o cargo abaixo.
 
 Cargo: {nome_cargo}
@@ -458,6 +464,7 @@ def regenerar_criterio_ia(
     descricao_vaga: str,
     criterio_anterior: str,
     max_palavras: int,
+    prompt_template: str | None = None,
 ) -> dict:
     """Regenerate a single criterion (by index) with AI, keeping the others intact.
 
@@ -469,8 +476,21 @@ def regenerar_criterio_ia(
     criterios_atuais = scorecard["criterios"]
     outros_nomes = [c["nome"] for i, c in enumerate(criterios_atuais) if i != indice]
     peso_atual = criterios_atuais[indice]["peso"]
+    outros_nomes_str = ', '.join(outros_nomes)
 
-    prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+    if prompt_template is not None:
+        try:
+            prompt = prompt_template.format(
+                nome_cargo=nome_cargo,
+                descricao_vaga=descricao_vaga,
+                criterio_anterior=criterio_anterior,
+                outros_nomes=outros_nomes_str,
+                max_palavras=max_palavras,
+            )
+        except (KeyError, IndexError, ValueError) as e:
+            raise AIParsingError(f"Prompt 'regenerar_criterio_ia' contém variável inválida: {e}") from e
+    else:
+        prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
 Você está atualizando um scorecard de entrevista. Precisa gerar UM NOVO critério comportamental para substituir um existente.
 
 Cargo: {nome_cargo}
@@ -482,7 +502,7 @@ IMPORTANTE: O novo critério deve ser DIFERENTE e NÃO PARECIDO com "{criterio_a
 Deve representar um conceito comportamental distinto — não o mesmo tema com outras palavras.
 
 Os outros 4 critérios já definidos no scorecard (NÃO repita nenhum destes nem o critério anterior):
-{', '.join(outros_nomes)}
+{outros_nomes_str}
 
 Gere EXATAMENTE 1 critério comportamental novo.
 
@@ -546,6 +566,7 @@ def gerar_rubrica_criterio(
     descricao_vaga: str,
     outros_criterios: list,
     max_palavras: int,
+    prompt_template: str | None = None,
 ) -> dict:
     """Generate rubric levels 1-5 for a manually-named criterion.
 
@@ -555,7 +576,19 @@ def gerar_rubrica_criterio(
     """
     outros_str = ", ".join(outros_criterios) if outros_criterios else "N/A"
 
-    prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+    if prompt_template is not None:
+        try:
+            prompt = prompt_template.format(
+                nome_cargo=nome_cargo,
+                descricao_vaga=descricao_vaga,
+                nome_criterio=nome_criterio,
+                outros_str=outros_str,
+                max_palavras=max_palavras,
+            )
+        except (KeyError, IndexError, ValueError) as e:
+            raise AIParsingError(f"Prompt 'gerar_rubrica_criterio' contém variável inválida: {e}") from e
+    else:
+        prompt = f"""Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
 Gere a rubrica de avaliação para o critério comportamental abaixo, no contexto deste cargo.
 
 Cargo: {nome_cargo}
@@ -680,7 +713,7 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
     return dados
 
 
-def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) -> dict:
+def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str, prompt_template: str | None = None) -> dict:
     numerada = _numerar_linhas(transcricao)
 
     blocos_criterio = []
@@ -691,7 +724,17 @@ def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str) ->
         )
     texto_criterios = "\n\n".join(blocos_criterio)
 
-    prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
+    if prompt_template is not None:
+        try:
+            prompt = prompt_template.format(
+                nome_candidato=nome_candidato,
+                texto_criterios=texto_criterios,
+                numerada=numerada,
+            )
+        except (KeyError, IndexError, ValueError) as e:
+            raise AIParsingError(f"Prompt 'avaliar_candidato' contém variável inválida: {e}") from e
+    else:
+        prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
 
 Candidato: {nome_candidato}
 

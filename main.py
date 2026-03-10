@@ -30,12 +30,248 @@ from auth import (
     require_superadmin,
     verify_password,
 )
-from models import Candidate, Company, Job, SessionLocal, User, create_tables, get_db
+from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db
 
 SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "hiring-eval-secret-key-change-in-production")
 
 
 # ── Startup ────────────────────────────────────────────────────────────────────
+
+def _load_prompt(db: Session, name: str) -> str | None:
+    """Return the prompt_text for the given name, or None if not found."""
+    p = db.query(Prompt).filter(Prompt.name == name).first()
+    return p.prompt_text if p else None
+
+
+# ── Prompt templates (stored in DB; variables use {name} placeholders) ─────────
+
+_PROMPT_GERAR_SCORECARD = """\
+Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+Sua tarefa é criar um scorecard de entrevista para o cargo abaixo.
+
+Cargo: {nome_cargo}
+Descrição da Vaga:
+{descricao_vaga}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — ANALISE A VAGA ANTES DE GERAR OS CRITÉRIOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Antes de definir os critérios, reflita internamente:
+- Quais comportamentos são mais críticos para o sucesso neste cargo específico?
+- Quais dinâmicas interpessoais e de tomada de decisão mais diferenciam um profissional mediano de um excelente aqui?
+Use essa análise para escolher 5 critérios representativos deste cargo — não critérios genéricos que servem para qualquer vaga.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+O QUE É PROIBIDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✗ Hard skills técnicas (programação, linguagens, ferramentas, plataformas)
+✗ Conhecimento de softwares ou sistemas (Excel, Python, SQL, Salesforce, SAP, Power BI, etc.)
+✗ Certificações, diplomas ou requisitos de formação acadêmica
+✗ Idiomas ou fluência linguística
+✗ Qualquer habilidade adquirida em curso técnico, e não em interações humanas
+✗ Critérios redundantes ou parecidos entre si
+
+Se a vaga mencionar requisitos técnicos (ex: "deve conhecer Python", "fluência em inglês"),
+IGNORE-OS — são pré-requisitos de triagem e não fazem parte da avaliação comportamental.
+
+O QUE É OBRIGATÓRIO
+✓ Comportamentos observáveis em situações de trabalho
+✓ Soft skills: liderança, comunicação, resolução de conflitos, adaptabilidade, colaboração, etc.
+✓ Fit cultural, de valores e de mentalidade com o cargo
+✓ Dinâmicas interpessoais e forma de tomar decisões
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILOSOFIA DAS RUBRICAS — LEIA COM ATENÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+As rubricas devem avaliar COMO o candidato pensa e responde — não se ele viveu exatamente uma situação específica.
+O candidato pode demonstrar a mesma competência com exemplos de contextos completamente diferentes.
+
+❌ ERRADO — exige experiência específica:
+"Liderou uma reorganização estratégica do time com múltiplos níveis de reporte."
+
+✅ CERTO — avalia qualidade da resposta:
+"Explica decisões considerando impactos de longo prazo e possíveis consequências não óbvias."
+
+Cada nível da rubrica deve descrever SINAIS OBSERVÁVEIS NA RESPOSTA DO CANDIDATO, como:
+- Clareza e lógica do raciocínio apresentado
+- Capacidade de estruturar o problema antes de explicar a solução
+- Qualidade e pertinência dos exemplos usados para sustentar o argumento
+- Profundidade da reflexão e consciência das implicações e trade-offs
+
+As descrições devem funcionar independentemente do setor, tamanho de empresa ou cargo anterior do candidato.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGRAS DE FORMATO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Retorne EXATAMENTE 5 critérios — nem mais, nem menos.
+2. Cada critério deve medir uma DIMENSÃO COMPORTAMENTAL DIFERENTE (sem critérios parecidos ou redundantes).
+3. O nome de cada critério deve ser EXATAMENTE UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução").
+4. Os pesos devem ser números inteiros que somem EXATAMENTE 100.
+5. Cada descrição de nível deve ter NO MÁXIMO 200 caracteres.
+6. Os níveis devem mostrar PROGRESSÃO REAL de comportamento — não apenas variações de intensidade como "fraco / médio / forte".
+
+Escala da rubrica (cada nível descreve um sinal observável na resposta):
+1 = Resposta vaga, sem estrutura ou sem exemplos; não demonstra o comportamento
+2 = Demonstração superficial ou inconsistente; exemplos genéricos ou sem profundidade
+3 = Demonstra o comportamento com clareza em pelo menos um exemplo concreto e bem explicado
+4 = Demonstra com consistência, estrutura clara e reflexão sobre impactos, alternativas ou aprendizados
+5 = Raciocínio estruturado, exemplos pertinentes e consciência de implicações complexas ou de longo prazo
+
+EXEMPLO RUIM (PROIBIDO):
+Liderança/5: "Liderou equipe com múltiplos níveis de reporte e implementou OKRs."
+→ Exige experiência específica; candidato de empresa pequena será penalizado injustamente.
+
+EXEMPLO BOM:
+Liderança/5: "Explica como influenciou o grupo sem autoridade formal, descreve o raciocínio por trás das decisões e os impactos percebidos."
+→ Avalia o pensamento, não o histórico.
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "criterios": [
+    {{
+      "nome": "UmaPalavra",
+      "peso": 20,
+      "rubrica": {{
+        "1": "Sinal observável na resposta — nível 1 (máx 200 caracteres)",
+        "2": "Sinal observável na resposta — nível 2 (máx 200 caracteres)",
+        "3": "Sinal observável na resposta — nível 3 (máx 200 caracteres)",
+        "4": "Sinal observável na resposta — nível 4 (máx 200 caracteres)",
+        "5": "Sinal observável na resposta — nível 5 (máx 200 caracteres)"
+      }}
+    }}
+  ]
+}}"""
+
+_PROMPT_REGENERAR_CRITERIO = """\
+Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+Você está atualizando um scorecard de entrevista. Precisa gerar UM NOVO critério comportamental para substituir um existente.
+
+Cargo: {nome_cargo}
+Descrição da Vaga:
+{descricao_vaga}
+
+CRITÉRIO ANTERIOR A SER SUBSTITUÍDO: "{criterio_anterior}"
+IMPORTANTE: O novo critério deve ser DIFERENTE e NÃO PARECIDO com "{criterio_anterior}".
+Deve representar um conceito comportamental distinto — não o mesmo tema com outras palavras.
+
+Os outros 4 critérios já definidos no scorecard (NÃO repita nenhum destes nem o critério anterior):
+{outros_nomes}
+
+Gere EXATAMENTE 1 critério comportamental novo.
+
+REGRAS ABSOLUTAS:
+✗ PROIBIDO: hard skills técnicas, ferramentas, linguagens, certificações, idiomas
+✗ PROIBIDO: repetir ou reescrever "{criterio_anterior}" com sinônimos
+✓ OBRIGATÓRIO: comportamento observável, soft skill, fit cultural — diferente dos existentes
+
+FORMATO:
+- nome: UMA PALAVRA em português (substantivo, inicial maiúscula — ex: "Liderança", "Execução")
+- rubrica: 5 níveis descritivos e específicos para este cargo
+- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "nome": "UmaPalavra",
+  "rubrica": {{
+    "1": "Descrição observável específica nível 1",
+    "2": "Descrição observável específica nível 2",
+    "3": "Descrição observável específica nível 3",
+    "4": "Descrição observável específica nível 4",
+    "5": "Descrição observável específica nível 5"
+  }}
+}}"""
+
+_PROMPT_GERAR_RUBRICA = """\
+Você é um especialista em People & Culture com foco em avaliação comportamental estruturada.
+Gere a rubrica de avaliação para o critério comportamental abaixo, no contexto deste cargo.
+
+Cargo: {nome_cargo}
+Descrição da Vaga:
+{descricao_vaga}
+
+Critério a descrever: {nome_criterio}
+(Outros critérios do scorecard para contexto: {outros_str})
+
+REGRAS:
+- Descreva comportamentos observáveis e específicos para este cargo
+- Cada nível deve ser distinto e claro
+- Escala: 1=ausente, 2=fraco, 3=adequado, 4=forte, 5=excepcional
+- Cada descrição de nível deve ter NO MÁXIMO {max_palavras} palavras
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "rubrica": {{
+    "1": "Descrição observável nível 1",
+    "2": "Descrição observável nível 2",
+    "3": "Descrição observável nível 3",
+    "4": "Descrição observável nível 4",
+    "5": "Descrição observável nível 5"
+  }}
+}}"""
+
+_PROMPT_AVALIAR_CANDIDATO = """\
+Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
+
+Candidato: {nome_candidato}
+
+=== SCORECARD ===
+{texto_criterios}
+
+=== TRANSCRIÇÃO (com número de linhas) ===
+{numerada}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES — LEIA COM ATENÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Para CADA critério do scorecard, siga este processo:
+
+PASSO 1 — Verifique se há evidência real na transcrição.
+Procure falas do candidato que demonstrem diretamente o comportamento avaliado naquele critério.
+
+SE houver evidência suficiente → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
+SE NÃO houver evidência suficiente → NÃO atribua nota (use o objeto "sem evidência").
+
+REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
+Não invente contexto. Não assuma comportamentos não descritos na transcrição.
+Só cite linhas que realmente existem na transcrição.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMATOS DOS OBJETOS DE AVALIAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Objeto COM nota (quando há evidência para avaliar):
+{{
+  "criterio": "NomeDoCriterio",
+  "nota": 3,
+  "peso": 20,
+  "contribuicao": 12.0,
+  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "lacunas": "O que não foi demonstrado"
+}}
+
+Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
+{{
+  "criterio": "NomeDoCriterio",
+  "peso": 20,
+  "sem_evidencia": true,
+  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
+  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+}}
+
+Regras adicionais para objetos COM nota:
+- nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
+- contribuicao = (nota × peso) / 5
+- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- lacunas: o que ficou ausente ou não foi demonstrado
+
+Retorne APENAS JSON válido (sem markdown, sem explicação):
+{{
+  "avaliacoes": [
+    {{ objeto com nota OU sem evidência para cada critério }}
+  ]
+}}"""
+
 
 def _seed_initial_data(db: Session) -> None:
     """Ensure Teste company exists, assign orphan jobs to it, and ensure a superadmin exists."""
@@ -72,6 +308,15 @@ def _seed_initial_data(db: Session) -> None:
         print("Altere a senha após o primeiro login!")
         print("=" * 60)
 
+    # Seed AI prompts (only insert if not already present — never overwrite edits)
+    for name, text in [
+        ("gerar_scorecard", _PROMPT_GERAR_SCORECARD),
+        ("regenerar_criterio_ia", _PROMPT_REGENERAR_CRITERIO),
+        ("gerar_rubrica_criterio", _PROMPT_GERAR_RUBRICA),
+        ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
+    ]:
+        if not db.query(Prompt).filter(Prompt.name == name).first():
+            db.add(Prompt(name=name, prompt_text=text, version=1))
     db.commit()
 
 
@@ -603,7 +848,10 @@ def gerar_scorecard_rota(
     if not cargo:
         return RedirectResponse(url="/", status_code=303)
     try:
-        scorecard = ai_client.gerar_scorecard(cargo.name, cargo.description)
+        scorecard = ai_client.gerar_scorecard(
+            cargo.name, cargo.description,
+            prompt_template=_load_prompt(db, "gerar_scorecard"),
+        )
         cargo.scorecard = scorecard
         db.commit()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg=scorecard_gerado", status_code=303)
@@ -630,6 +878,7 @@ def regenerar_criterio_rota(
         novo = ai_client.regenerar_criterio_ia(
             cargo.scorecard, criterio_idx, cargo.name, cargo.description,
             criterio_anterior, max_palavras,
+            prompt_template=_load_prompt(db, "regenerar_criterio_ia"),
         )
         novo_scorecard = copy.deepcopy(cargo.scorecard)
         novo_scorecard["criterios"][criterio_idx] = novo
@@ -667,7 +916,8 @@ def editar_criterio_rota(
         outros = [c["nome"] for i, c in enumerate(criterios) if i != criterio_idx]
         max_palavras = ai_client._max_palavras_rubrica(cargo.scorecard)
         nova_rubrica = ai_client.gerar_rubrica_criterio(
-            novo_nome.strip(), cargo.name, cargo.description, outros, max_palavras
+            novo_nome.strip(), cargo.name, cargo.description, outros, max_palavras,
+            prompt_template=_load_prompt(db, "gerar_rubrica_criterio"),
         )
         novo_scorecard = copy.deepcopy(cargo.scorecard)
         novo_scorecard["criterios"][criterio_idx]["nome"] = novo_nome.strip()
@@ -792,7 +1042,10 @@ def criar_candidato(
     db.flush()
 
     try:
-        avaliacao = ai_client.avaliar_candidato(cargo.scorecard, candidato.name, transcript)
+        avaliacao = ai_client.avaliar_candidato(
+            cargo.scorecard, candidato.name, transcript,
+            prompt_template=_load_prompt(db, "avaliar_candidato"),
+        )
         candidato.evaluation = avaliacao
         candidato.final_score = avaliacao["nota_final"]
         db.commit()
@@ -867,7 +1120,10 @@ def criar_candidato_video(
     db.flush()
 
     try:
-        avaliacao = ai_client.avaliar_candidato(cargo.scorecard, candidato.name, transcript)
+        avaliacao = ai_client.avaliar_candidato(
+            cargo.scorecard, candidato.name, transcript,
+            prompt_template=_load_prompt(db, "avaliar_candidato"),
+        )
         candidato.evaluation = avaliacao
         candidato.final_score = avaliacao["nota_final"]
         db.commit()
@@ -1108,6 +1364,56 @@ def impersonar_usuario(
 def parar_impersonar(request: Request, actual_user: User = Depends(require_superadmin)):
     request.session.pop("impersonating_user_id", None)
     return RedirectResponse(url="/admin", status_code=303)
+
+
+# ── Admin Prompts routes ────────────────────────────────────────────────────────
+
+@app.get("/admin/prompts", response_class=HTMLResponse)
+def listar_prompts(
+    request: Request,
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    prompts = db.query(Prompt).order_by(Prompt.name).all()
+    return templates.TemplateResponse(
+        "admin/prompts.html",
+        ctx(request, actual_user, prompts=prompts),
+    )
+
+
+@app.get("/admin/prompts/{prompt_name}/editar", response_class=HTMLResponse)
+def editar_prompt_form(
+    request: Request,
+    prompt_name: str,
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    prompt = db.query(Prompt).filter(Prompt.name == prompt_name).first()
+    if not prompt:
+        return RedirectResponse(url="/admin/prompts", status_code=303)
+    flash_saved = request.session.pop("flash_prompt_saved", None)
+    return templates.TemplateResponse(
+        "admin/prompt_editar.html",
+        ctx(request, actual_user, prompt=prompt, flash_saved=flash_saved),
+    )
+
+
+@app.post("/admin/prompts/{prompt_name}/editar")
+def salvar_prompt(
+    request: Request,
+    prompt_name: str,
+    prompt_text: str = Form(...),
+    actual_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    prompt = db.query(Prompt).filter(Prompt.name == prompt_name).first()
+    if prompt and prompt_text.strip():
+        prompt.prompt_text = prompt_text.strip()
+        prompt.version += 1
+        prompt.updated_at = datetime.utcnow()
+        db.commit()
+    request.session["flash_prompt_saved"] = True
+    return RedirectResponse(url=f"/admin/prompts/{prompt_name}/editar", status_code=303)
 
 
 # ── Company Admin routes ───────────────────────────────────────────────────────
