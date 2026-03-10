@@ -309,25 +309,32 @@ def _seed_initial_data(db: Session) -> None:
         print("=" * 60)
 
     # Seed AI prompts (only insert if not already present — never overwrite edits)
-    for name, text in [
+    _PROMPTS_SEED = [
         ("gerar_scorecard", _PROMPT_GERAR_SCORECARD),
         ("regenerar_criterio_ia", _PROMPT_REGENERAR_CRITERIO),
         ("gerar_rubrica_criterio", _PROMPT_GERAR_RUBRICA),
         ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
-    ]:
+    ]
+    inserted = 0
+    for name, text in _PROMPTS_SEED:
         if not db.query(Prompt).filter(Prompt.name == name).first():
             db.add(Prompt(name=name, prompt_text=text, version=1))
+            inserted += 1
     db.commit()
+    print(f"[SEED] Prompts de IA: {inserted} inserido(s), {len(_PROMPTS_SEED) - inserted} já existia(m).")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("[STARTUP] Criando/verificando tabelas...")
     create_tables()
+    print("[STARTUP] Tabelas OK. Executando seed...")
     db = SessionLocal()
     try:
         _seed_initial_data(db)
     finally:
         db.close()
+    print("[STARTUP] Seed concluído. App pronto.")
     yield
 
 
@@ -1374,7 +1381,11 @@ def listar_prompts(
     actual_user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
-    prompts = db.query(Prompt).order_by(Prompt.name).all()
+    try:
+        prompts = db.query(Prompt).order_by(Prompt.name).all()
+    except Exception as e:
+        print(f"[PROMPTS] Erro ao listar prompts: {e}")
+        prompts = []
     return templates.TemplateResponse(
         "admin/prompts.html",
         ctx(request, actual_user, prompts=prompts),
@@ -1388,9 +1399,13 @@ def editar_prompt_form(
     actual_user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
-    prompt = db.query(Prompt).filter(Prompt.name == prompt_name).first()
+    try:
+        prompt = db.query(Prompt).filter(Prompt.name == prompt_name).first()
+    except Exception as e:
+        print(f"[PROMPTS] Erro ao buscar prompt '{prompt_name}': {e}")
+        raise HTTPException(status_code=404, detail=f"Prompt '{prompt_name}' não encontrado")
     if not prompt:
-        return RedirectResponse(url="/admin/prompts", status_code=303)
+        raise HTTPException(status_code=404, detail=f"Prompt '{prompt_name}' não encontrado")
     flash_saved = request.session.pop("flash_prompt_saved", None)
     return templates.TemplateResponse(
         "admin/prompt_editar.html",
@@ -1406,8 +1421,14 @@ def salvar_prompt(
     actual_user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
-    prompt = db.query(Prompt).filter(Prompt.name == prompt_name).first()
-    if prompt and prompt_text.strip():
+    try:
+        prompt = db.query(Prompt).filter(Prompt.name == prompt_name).first()
+    except Exception as e:
+        print(f"[PROMPTS] Erro ao buscar prompt '{prompt_name}' para salvar: {e}")
+        raise HTTPException(status_code=404, detail=f"Prompt '{prompt_name}' não encontrado")
+    if not prompt:
+        raise HTTPException(status_code=404, detail=f"Prompt '{prompt_name}' não encontrado")
+    if prompt_text.strip():
         prompt.prompt_text = prompt_text.strip()
         prompt.version += 1
         prompt.updated_at = datetime.utcnow()
