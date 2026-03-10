@@ -20,7 +20,7 @@
     </span>
     <span class="badge badge-gray">v{{ prompt.version }}</span>
     <span class="text-muted" style="font-size:0.8125rem;">
-      Atualizado em: {{ prompt.updated_at.strftime('%d/%m/%Y às %H:%M') if prompt.updated_at else '—' }}
+      Atualizado em: {{ prompt.updated_at | dt_br('%d/%m/%Y às %H:%M') }}
     </span>
   </div>
 

@@ -5,7 +5,8 @@ import secrets
 import tempfile
 import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -221,6 +222,20 @@ app = FastAPI(title="Cabine", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+_BR_TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def _dt_br(dt: datetime | None, fmt: str = "%d/%m/%Y %H:%M") -> str:
+    """Convert a naive UTC datetime to America/Sao_Paulo and format it."""
+    if dt is None:
+        return "—"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_BR_TZ).strftime(fmt)
+
+
+templates.env.filters["dt_br"] = _dt_br
 
 
 # ── Exception handlers ─────────────────────────────────────────────────────────

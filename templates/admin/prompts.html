@@ -32,7 +32,7 @@
           <td style="font-weight:600; font-family:monospace; font-size:0.875rem;">{{ p.name }}</td>
           <td><span class="badge badge-gray">v{{ p.version }}</span></td>
           <td class="text-muted" style="font-size:0.8125rem;">
-            {{ p.updated_at.strftime('%d/%m/%Y %H:%M') if p.updated_at else '—' }}
+            {{ p.updated_at | dt_br }}
           </td>
           <td>
             <a href="/admin/prompts/{{ p.name }}/editar" class="btn btn-sm btn-ghost">Editar</a>

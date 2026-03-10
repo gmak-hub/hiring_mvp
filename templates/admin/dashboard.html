@@ -79,7 +79,7 @@
             </a>
           </td>
           <td class="text-muted" style="font-size:0.8125rem;">
-            {{ empresa.created_at.strftime('%d/%m/%Y') if empresa.created_at else '—' }}
+            {{ empresa.created_at | dt_br('%d/%m/%Y') }}
           </td>
           <td>
             <div class="action-cell">
