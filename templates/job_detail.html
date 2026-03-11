@@ -243,15 +243,16 @@
             </td>
             {% if candidato.evaluation %}
               {% for c in job.scorecard.criterios %}
-                {% set ns = namespace(val=0, sem_ev=false) %}
+                {% set ns = namespace(val=0, sem_ev=false, found=false) %}
                 {% for av in candidato.evaluation.avaliacoes %}
                   {% if av.criterio == c.nome %}
+                    {% set ns.found = true %}
                     {% set ns.sem_ev = av.sem_evidencia if av.sem_evidencia else false %}
-                    {% if not ns.sem_ev %}{% set ns.val = av.nota %}{% endif %}
+                    {% if not ns.sem_ev %}{% set ns.val = av.nota | int %}{% endif %}
                   {% endif %}
                 {% endfor %}
                 <td class="td-center">
-                  {% if ns.sem_ev %}
+                  {% if ns.sem_ev or not ns.found or not ns.val %}
                     <span style="color:var(--text-muted); font-size:0.8125rem;">—</span>
                   {% else %}
                     <span class="score score-{{ ns.val }}">{{ ns.val }}</span>
