@@ -346,6 +346,32 @@ def migrate_prompts_remove_variables(prompts_data: list[tuple[str, str]]) -> int
     return updated
 
 
+def migrate_prompts_add_content_classification(prompts_data: list[tuple[str, str]]) -> int:
+    """
+    One-time migration: add content-type classification rules to the avaliar_candidato prompt.
+
+    Only updates rows that do NOT yet contain 'classifique mentalmente o tipo de conteúdo',
+    so admin-edited prompts that already include this logic are never overwritten.
+    Returns the number of rows actually updated.
+    """
+    from sqlalchemy import text
+
+    updated = 0
+    with _direct_engine.connect() as conn:
+        for name, prompt_text in prompts_data:
+            result = conn.execute(
+                text(
+                    "UPDATE prompts SET prompt_text = :prompt_text, updated_at = NOW() "
+                    "WHERE name = :name "
+                    "AND prompt_text NOT LIKE '%classifique mentalmente o tipo de conteúdo%'"
+                ),
+                {"name": name, "prompt_text": prompt_text},
+            )
+            updated += result.rowcount
+        conn.commit()
+    return updated
+
+
 def create_tables():
     Base.metadata.create_all(bind=_direct_engine)
     _migrate_db()

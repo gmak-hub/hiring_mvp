@@ -32,7 +32,7 @@ from auth import (
     require_superadmin,
     verify_password,
 )
-from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db, migrate_prompts_remove_variables, migrate_prompts_split_technical, seed_prompts
+from models import Candidate, Company, Job, Prompt, SessionLocal, User, create_tables, get_db, migrate_prompts_add_content_classification, migrate_prompts_remove_variables, migrate_prompts_split_technical, seed_prompts
 
 SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "hiring-eval-secret-key-change-in-production")
 
@@ -131,8 +131,24 @@ INSTRUÇÕES — LEIA COM ATENÇÃO
 
 Para CADA critério do scorecard, siga este processo:
 
-PASSO 1 — Verifique se há evidência real na transcrição.
-Procure falas do candidato que demonstrem diretamente o comportamento avaliado naquele critério.
+PASSO 1 — Classifique o tipo de conteúdo de cada trecho antes de usá-lo como evidência.
+
+Antes de usar qualquer trecho da transcrição como evidência, identifique mentalmente a qual categoria ele pertence:
+
+  (1) Evidência comportamental direta — o candidato descreve algo que fez, decidiu ou executou.
+  (2) Relato de feedback ou autocrítica — o candidato conta algo que disseram sobre ele, ou uma crítica que recebeu.
+  (3) Reflexão ou opinião — o candidato fala de forma hipotética, abstrata ou genérica.
+
+REGRAS DE CLASSIFICAÇÃO:
+• Apenas trechos do tipo (1) devem ser usados como evidência forte para avaliar competências.
+• Trechos do tipo (2) NÃO são evidência automática de fraqueza.
+  - Quando o candidato menciona um feedback negativo, analise: ele demonstra aprendizado? Explica como mudou? Contextualiza a situação?
+  - Se sim, o foco deve ser a capacidade de reflexão e evolução — não a crítica em si.
+  - Nunca trate uma frase negativa isolada como prova de incompetência quando ela está dentro de uma pergunta de feedback, autocrítica ou reflexão sobre erros passados.
+• Só considere fraqueza real quando houver descrição clara de comportamento recorrente ou exemplo concreto que demonstre a falha em ação.
+
+PASSO 2 — Verifique se há evidência real na transcrição.
+Procure falas do candidato (tipo 1) que demonstrem diretamente o comportamento avaliado naquele critério.
 
 SE houver evidência suficiente → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
 SE NÃO houver evidência suficiente → NÃO atribua nota (use o objeto "sem evidência").
@@ -207,6 +223,11 @@ async def lifespan(app: FastAPI):
     ])
     if migrated_vars:
         print(f"[STARTUP] Prompts migrados para formato sem variáveis: {migrated_vars} atualizado(s).")
+    migrated_classif = migrate_prompts_add_content_classification([
+        ("avaliar_candidato", _PROMPT_AVALIAR_CANDIDATO),
+    ])
+    if migrated_classif:
+        print(f"[STARTUP] Prompts migrados com classificação de conteúdo: {migrated_classif} atualizado(s).")
     print("[STARTUP] Executando seed de dados...")
     db = SessionLocal()
     try:

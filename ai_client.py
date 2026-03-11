@@ -906,6 +906,17 @@ Reúna todos os trechos mapeados para cada critério do scorecard.
 
 ETAPA 4 — AVALIAR CADA CRITÉRIO
 Para cada critério, com base nas evidências agrupadas na etapa anterior:
+
+Antes de usar qualquer trecho como evidência, classifique mentalmente o tipo de conteúdo:
+  (1) Evidência comportamental direta — o candidato descreve algo que fez, decidiu ou executou.
+  (2) Relato de feedback ou autocrítica — o candidato conta algo que disseram sobre ele, ou uma crítica que recebeu.
+  (3) Reflexão ou opinião — o candidato fala de forma hipotética, abstrata ou genérica.
+
+Regras de classificação:
+- Apenas trechos do tipo (1) devem ser usados como evidência forte.
+- Trechos do tipo (2) NÃO são evidência automática de fraqueza. Quando o candidato menciona um feedback negativo, avalie: ele demonstra aprendizado? Explica como mudou? Se sim, o foco deve ser reflexão e evolução — não a crítica em si. Nunca trate uma frase negativa isolada como prova de incompetência quando está dentro de uma pergunta de feedback, autocrítica ou reflexão sobre erros.
+- Só considere fraqueza real quando houver descrição clara de comportamento recorrente ou exemplo concreto que demonstre a falha em ação.
+
 - Compare as evidências com a rubrica do critério.
 - SE houver evidência suficiente → atribua nota 1–5 e retorne o objeto "com nota".
 - SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o objeto "sem evidência".
