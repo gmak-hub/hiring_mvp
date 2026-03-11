@@ -91,6 +91,18 @@
     </div>
   </div>
 
+  <!-- Resumo do candidato -->
+  {% if candidate.evaluation.resumo %}
+  <div class="section" style="margin-top: 1rem;">
+    <div class="section-header">
+      <span class="section-title">Resumo do Candidato</span>
+    </div>
+    <div style="padding: 1rem 1.25rem; font-size: 0.9375rem; line-height: 1.65; color: var(--text-primary);">
+      {{ candidate.evaluation.resumo }}
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Detalhamento por critério -->
   <div class="section-title" style="margin-bottom: 1rem;">Detalhamento por Critério</div>
 

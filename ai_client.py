@@ -849,6 +849,37 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
     return dados
 
 
+def _gerar_resumo(nome_candidato: str, avaliacoes: list) -> str:
+    """Gera um resumo de 3–4 frases do candidato a partir da avaliação já feita (não da transcrição)."""
+    linhas = []
+    for av in avaliacoes:
+        if av.get("sem_evidencia"):
+            linhas.append(
+                f"- {av['criterio']} (peso {av['peso']}%): evidência insuficiente — {av.get('motivo', '')}"
+            )
+        else:
+            lacunas = f" Lacunas: {av['lacunas']}" if av.get("lacunas") else ""
+            linhas.append(
+                f"- {av['criterio']} (peso {av['peso']}%, nota {av['nota']}/5).{lacunas}"
+            )
+    avaliacao_texto = "\n".join(linhas)
+
+    prompt = f"""Com base na avaliação estruturada do candidato {nome_candidato}, escreva um resumo de 3 a 4 frases.
+
+AVALIAÇÃO:
+{avaliacao_texto}
+
+REGRAS:
+- Máximo de 4 frases curtas e diretas
+- Objetivo e informativo — sem linguagem corporativa vaga ("excelente profissional", "grande potencial", etc.)
+- Sintetize o desempenho geral e os principais comportamentos observados na entrevista
+- Se houver limitação ou risco relevante, mencione-o
+- Baseie-se apenas nos dados acima — não invente comportamentos
+- Retorne apenas o texto corrido, sem título nem formatação"""
+
+    return _chamar_api(prompt, max_tokens=300).strip()
+
+
 def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str, prompt_template: str | None = None) -> dict:
     numerada = _numerar_linhas(transcricao)
 
@@ -991,5 +1022,6 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
     dados["nota_final"] = nota_final
     dados["criterios_avaliados"] = len(scored)
     dados["criterios_total"] = len(dados["avaliacoes"])
+    dados["resumo"] = _gerar_resumo(nome_candidato, dados["avaliacoes"])
 
     return dados
