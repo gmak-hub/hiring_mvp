@@ -70,7 +70,7 @@
           <tr>
             <td class="criterion-name">{{ av.criterio }}</td>
             <td><span class="weight-pill">{{ av.peso }}%</span></td>
-            <td class="td-center"><span class="score score-{{ av.nota }}">{{ av.nota }}</span></td>
+            <td class="td-center"><span class="score score-{{ av.nota | int }}">{{ av.nota | int }}</span></td>
             <td class="td-center td-contribution">{{ av.contribuicao | round(1) }}</td>
           </tr>
           {% endif %}

@@ -4,6 +4,7 @@ import os
 import secrets
 import tempfile
 import traceback
+import unicodedata
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -236,6 +237,17 @@ def _dt_br(dt: datetime | None, fmt: str = "%d/%m/%Y %H:%M") -> str:
 
 
 templates.env.filters["dt_br"] = _dt_br
+
+
+def _norm_nome(s: object) -> str:
+    """Normalize a criterion name for comparison: NFC, strip, lowercase."""
+    if not isinstance(s, str):
+        return ""
+    return unicodedata.normalize("NFC", s).strip().lower()
+
+
+templates.env.filters["norm_nome"] = _norm_nome
+templates.env.globals["norm_nome"] = _norm_nome
 
 
 # ── Exception handlers ─────────────────────────────────────────────────────────
@@ -540,18 +552,25 @@ def _get_job(db: Session, job_id: int, user: User) -> "Job | None":
 
 # ── Scorecard candidate helpers ────────────────────────────────────────────────
 
+def _norm_criterio(s: object) -> str:
+    """Normalize a criterion name: NFC, strip, lowercase. Used for safe matching."""
+    if not isinstance(s, str):
+        return ""
+    return unicodedata.normalize("NFC", s).strip().lower()
+
+
 def _recalcular_notas_candidatos(cargo: "Job", novo_scorecard: dict) -> None:
     """Recalculate candidate scores mathematically when only weights changed (Case A).
 
     Keeps existing criterion notes; updates peso, contribuicao and nota_final.
     """
-    pesos_por_nome = {c["nome"]: c["peso"] for c in novo_scorecard["criterios"]}
+    pesos_por_nome = {_norm_criterio(c["nome"]): c["peso"] for c in novo_scorecard["criterios"]}
     for candidato in cargo.candidates:
         if candidato.is_deleted or candidato.evaluation is None:
             continue
         nova_eval = copy.deepcopy(candidato.evaluation)
         for av in nova_eval["avaliacoes"]:
-            novo_peso = pesos_por_nome.get(av["criterio"])
+            novo_peso = pesos_por_nome.get(_norm_criterio(av["criterio"]))
             if novo_peso is not None:
                 av["peso"] = novo_peso
                 if not av.get("sem_evidencia"):
@@ -589,8 +608,9 @@ def _reavaliar_criterios_alterados(cargo: "Job", scorecard: dict, pendentes: lis
                 )
                 # Replace the evaluation entry that matches the old criterion name
                 substituido = False
+                nome_anterior_key = _norm_criterio(nome_anterior)
                 for j, av in enumerate(nova_eval["avaliacoes"]):
-                    if av["criterio"] == nome_anterior:
+                    if _norm_criterio(av["criterio"]) == nome_anterior_key:
                         nova_eval["avaliacoes"][j] = nova_av
                         substituido = True
                         break

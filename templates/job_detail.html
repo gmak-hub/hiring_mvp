@@ -244,8 +244,9 @@
             {% if candidato.evaluation %}
               {% for c in job.scorecard.criterios %}
                 {% set ns = namespace(val=0, sem_ev=false, found=false) %}
+                {% set c_key = c.nome | norm_nome %}
                 {% for av in candidato.evaluation.avaliacoes %}
-                  {% if av.criterio == c.nome %}
+                  {% if av.criterio | norm_nome == c_key %}
                     {% set ns.found = true %}
                     {% set ns.sem_ev = av.sem_evidencia if av.sem_evidencia else false %}
                     {% if not ns.sem_ev %}{% set ns.val = av.nota | int %}{% endif %}
