@@ -148,7 +148,7 @@ Objeto COM nota (quando há evidência para avaliar):
   "nota": 3,
   "peso": 20,
   "contribuicao": 12.0,
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": ["[linhas 12–18] 'trecho exato das linhas 12 a 18'"],
   "lacunas": "O que não foi demonstrado"
 }
 
@@ -164,7 +164,7 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
 - contribuicao = (nota × peso) / 5
-- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- evidencias: TRECHOS CONTÍNUOS referenciados como "[linhas X–Y] 'trecho exato'"
 - lacunas: o que ficou ausente ou não foi demonstrado
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
@@ -352,8 +352,18 @@ def _numerar_linhas(transcricao: str) -> str:
 
 
 def _ordenar_evidencias(evidencias: list[str]) -> list[str]:
-    """Sort evidence citations by their transcript line number ([N] 'quote')."""
+    """Sort evidence citations by start line number.
+
+    Accepts two formats:
+    - "[linhas X–Y] 'trecho'"  (new range format, em-dash or hyphen)
+    - "[N] 'citação'"          (legacy single-line format)
+    """
     def _linha(ev: str) -> int:
+        # New format: [linhas X–Y] or [linhas X-Y]
+        m = re.match(r"\[linhas\s+(\d+)[–\-]", ev.strip())
+        if m:
+            return int(m.group(1))
+        # Legacy format: [N]
         m = re.match(r"\[(\d+)\]", ev.strip())
         return int(m.group(1)) if m else 999999
     return sorted(evidencias, key=_linha)
@@ -791,6 +801,9 @@ SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o formato B
 REGRA CRÍTICA: Ausência de evidência ≠ desempenho ruim.
 Não invente contexto. Não assuma coisas não ditas na transcrição.
 
+Ao citar evidências, use sempre intervalos contínuos de linhas no formato "[linhas X–Y] 'trecho exato'".
+Interrupções curtas do entrevistador não quebram o trecho — mantenha o intervalo contínuo.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATO A — com evidência (use quando há base na transcrição para avaliar):
 {{
@@ -798,7 +811,7 @@ FORMATO A — com evidência (use quando há base na transcrição para avaliar)
   "nota": 3,
   "peso": {peso_c},
   "contribuicao": {round(3 * peso_c / 5, 1)},
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": ["[linhas 12–18] 'trecho exato das linhas 12 a 18'"],
   "lacunas": "O que não foi demonstrado ou estava ausente"
 }}
 
@@ -869,16 +882,33 @@ Candidato: {nome_candidato}
 {numerada}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTRUÇÕES — LEIA COM ATENÇÃO
+INSTRUÇÕES — SIGA AS 4 ETAPAS ABAIXO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Para CADA critério do scorecard, siga este processo:
+ETAPA 1 — IDENTIFICAR TRECHOS DE RACIOCÍNIO
+Leia a transcrição inteira e identifique trechos contínuos onde o candidato está explicando a mesma ideia ou experiência.
+Regras:
+- Interrupções curtas do entrevistador (perguntas de clarificação, "uhm", "entendi") NÃO quebram o trecho.
+- Mudanças claras de assunto iniciam um novo trecho.
+- Cada trecho deve ser referenciado como [linhas X–Y].
 
-PASSO 1 — Verifique se há evidência real na transcrição.
-Procure falas do candidato que demonstrem diretamente o comportamento avaliado naquele critério.
+ETAPA 2 — MAPEAR CRITÉRIOS POR TRECHO
+Para cada trecho identificado, verifique quais critérios do scorecard aparecem nele.
+Regras:
+- Cada trecho pode impactar NO MÁXIMO 2 critérios.
+- Se mais de dois critérios parecerem relevantes, escolha apenas os DOIS mais fortes.
+- Marque apenas critérios claramente demonstrados — não force associações vagas.
 
-SE houver evidência suficiente → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
-SE NÃO houver evidência suficiente → NÃO atribua nota (use o objeto "sem evidência").
+ETAPA 3 — AGRUPAR EVIDÊNCIAS POR CRITÉRIO
+Reúna todos os trechos mapeados para cada critério do scorecard.
+- Se um critério não tiver nenhum trecho mapeado, ele será avaliado como "sem evidência".
+- Cada evidência deve ser referenciada como [linhas X–Y] 'trecho exato'.
+
+ETAPA 4 — AVALIAR CADA CRITÉRIO
+Para cada critério, com base nas evidências agrupadas na etapa anterior:
+- Compare as evidências com a rubrica do critério.
+- SE houver evidência suficiente → atribua nota 1–5 e retorne o objeto "com nota".
+- SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o objeto "sem evidência".
 
 REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
 Não invente contexto. Não assuma comportamentos não descritos na transcrição.
@@ -894,7 +924,7 @@ Objeto COM nota (quando há evidência para avaliar):
   "nota": 3,
   "peso": 20,
   "contribuicao": 12.0,
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": ["[linhas 12–18] 'trecho exato das linhas 12 a 18'"],
   "lacunas": "O que não foi demonstrado"
 }}
 
@@ -910,7 +940,7 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
 - contribuicao = (nota × peso) / 5
-- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- evidencias: TRECHOS CONTÍNUOS referenciados como "[linhas X–Y] 'trecho exato'"
 - lacunas: o que ficou ausente ou não foi demonstrado
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
