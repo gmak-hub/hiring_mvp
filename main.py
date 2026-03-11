@@ -240,10 +240,12 @@ templates.env.filters["dt_br"] = _dt_br
 
 
 def _norm_nome(s: object) -> str:
-    """Normalize a criterion name for comparison: NFC, strip, lowercase."""
+    """Normalize a criterion name for comparison: strip accents, lowercase, trim."""
     if not isinstance(s, str):
         return ""
-    return unicodedata.normalize("NFC", s).strip().lower()
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", s) if unicodedata.category(c) != "Mn"
+    ).strip().lower()
 
 
 templates.env.filters["norm_nome"] = _norm_nome
@@ -553,10 +555,8 @@ def _get_job(db: Session, job_id: int, user: User) -> "Job | None":
 # ── Scorecard candidate helpers ────────────────────────────────────────────────
 
 def _norm_criterio(s: object) -> str:
-    """Normalize a criterion name: NFC, strip, lowercase. Used for safe matching."""
-    if not isinstance(s, str):
-        return ""
-    return unicodedata.normalize("NFC", s).strip().lower()
+    """Normalize a criterion name for safe matching: strip accents, lowercase, trim."""
+    return _norm_nome(s)
 
 
 def _recalcular_notas_candidatos(cargo: "Job", novo_scorecard: dict) -> None:
