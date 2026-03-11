@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 import ai_client
-from ai_client import AIAuthError, AIConfigError, AIParsingError, AITimeoutError, AITranscriptionError
+from ai_client import AIAuthError, AIConfigError, AIParsingError, AITimeoutError, AITranscriptionError, resolver_evidencia
 from auth import (
     RequiresLoginException,
     RequiresPasswordChangeException,
@@ -585,7 +585,8 @@ def _reavaliar_criterios_alterados(cargo: "Job", scorecard: dict, pendentes: lis
             novo_criterio = scorecard["criterios"][indice]
             try:
                 nova_av = ai_client.avaliar_criterio_unico(
-                    novo_criterio, candidato.name, candidato.transcript
+                    novo_criterio, candidato.name, candidato.transcript,
+                    transcricao_legivel=candidato.transcript_legivel,
                 )
                 # Replace the evaluation entry that matches the old criterion name
                 substituido = False
@@ -936,17 +937,27 @@ def criar_candidato(
     if not cargo or not cargo.scorecard:
         return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
 
-    candidato = Candidate(job_id=cargo_id, name=name.strip(), transcript=transcript.strip())
-    db.add(candidato)
-    db.flush()
+    transcript_stripped = transcript.strip()
+    nome = name.strip()
 
     try:
+        # All AI work happens before any DB write
+        transcript_legivel = ai_client.gerar_transcricao_legivel(transcript_stripped)
         avaliacao = ai_client.avaliar_candidato(
-            cargo.scorecard, candidato.name, transcript,
+            cargo.scorecard, nome, transcript_stripped,
             prompt_template=_load_prompt(db, "avaliar_candidato"),
+            transcricao_legivel=transcript_legivel,
         )
-        candidato.evaluation = avaliacao
-        candidato.final_score = avaliacao["nota_final"]
+        # Save everything atomically once all results are ready
+        candidato = Candidate(
+            job_id=cargo_id,
+            name=nome,
+            transcript=transcript_stripped,
+            transcript_legivel=transcript_legivel,
+            evaluation=avaliacao,
+            final_score=avaliacao["nota_final"],
+        )
+        db.add(candidato)
         db.commit()
         db.refresh(candidato)
         return RedirectResponse(
@@ -1014,17 +1025,26 @@ def criar_candidato_video(
             except OSError:
                 pass
 
-    candidato = Candidate(job_id=cargo_id, name=name.strip(), transcript=transcript)
-    db.add(candidato)
-    db.flush()
+    nome = name.strip()
 
     try:
+        # All AI work happens before any DB write
+        transcript_legivel = ai_client.gerar_transcricao_legivel(transcript)
         avaliacao = ai_client.avaliar_candidato(
-            cargo.scorecard, candidato.name, transcript,
+            cargo.scorecard, nome, transcript,
             prompt_template=_load_prompt(db, "avaliar_candidato"),
+            transcricao_legivel=transcript_legivel,
         )
-        candidato.evaluation = avaliacao
-        candidato.final_score = avaliacao["nota_final"]
+        # Save everything atomically once all results are ready
+        candidato = Candidate(
+            job_id=cargo_id,
+            name=nome,
+            transcript=transcript,
+            transcript_legivel=transcript_legivel,
+            evaluation=avaliacao,
+            final_score=avaliacao["nota_final"],
+        )
+        db.add(candidato)
         db.commit()
         db.refresh(candidato)
         return RedirectResponse(
@@ -1036,6 +1056,22 @@ def criar_candidato_video(
         print(traceback.format_exc())
         db.rollback()
         return RedirectResponse(url=f"/cargos/{cargo_id}?msg={code}", status_code=303)
+
+
+def _enriquecer_avaliacao(avaliacao: dict, transcricao: str) -> dict:
+    """Return a display copy of the evaluation with resolved evidence blocks.
+
+    For each scored criterion, adds 'evidencias_resolvidas': a list of dicts
+    {"ref": "[N–M]", "linhas": [actual transcript lines]} so the template can
+    render the full conversation snippet instead of a bare line reference.
+    """
+    display = copy.deepcopy(avaliacao)
+    for av in display.get("avaliacoes", []):
+        if av.get("sem_evidencia") or not av.get("evidencias"):
+            continue
+        resolvidas = [resolver_evidencia(e, transcricao) for e in av["evidencias"]]
+        av["evidencias_resolvidas"] = [r for r in resolvidas if r]
+    return display
 
 
 @app.get("/cargos/{cargo_id}/candidatos/{candidato_id}", response_class=HTMLResponse)
@@ -1060,9 +1096,14 @@ def detalhe_candidato(
     )
     if not candidato:
         return RedirectResponse(url=f"/cargos/{cargo_id}", status_code=303)
+    evaluation_display = (
+        _enriquecer_avaliacao(candidato.evaluation, candidato.transcript)
+        if candidato.evaluation and candidato.transcript
+        else candidato.evaluation
+    )
     return templates.TemplateResponse(
         "candidate_detail.html",
-        ctx(request, current_user, candidate=candidato, job=cargo),
+        ctx(request, current_user, candidate=candidato, job=cargo, evaluation_display=evaluation_display),
     )
 
 

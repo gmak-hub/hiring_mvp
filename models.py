@@ -119,6 +119,7 @@ class Candidate(Base):
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
     name = Column(String(255), nullable=False)
     transcript = Column(Text, nullable=False)
+    transcript_legivel = Column(Text, nullable=True)
     evaluation = Column(JSON, nullable=True)
     final_score = Column(Float, nullable=True)
     is_deleted = Column(Boolean, default=False)
@@ -230,6 +231,8 @@ def _migrate_db():
                 conn.execute(text("ALTER TABLE candidates ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE"))
             if "deleted_at" not in cols:
                 conn.execute(text("ALTER TABLE candidates ADD COLUMN deleted_at TIMESTAMP"))
+            if "transcript_legivel" not in cols:
+                conn.execute(text("ALTER TABLE candidates ADD COLUMN transcript_legivel TEXT"))
 
         # ── companies ─────────────────────────────────────────────────────────
         if "companies" in existing_tables:

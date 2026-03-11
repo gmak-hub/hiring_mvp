@@ -38,7 +38,7 @@
   </div>
 </div>
 
-{% if candidate.evaluation %}
+{% if evaluation_display %}
 
   <!-- Tabela resumo -->
   <div class="section">
@@ -56,7 +56,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for av in candidate.evaluation.avaliacoes %}
+          {% for av in evaluation_display.avaliacoes %}
           {% if av.sem_evidencia %}
           <tr>
             <td class="criterion-name">{{ av.criterio }}</td>
@@ -78,9 +78,9 @@
           <tr class="total-row">
             <td colspan="3">
               <strong>Nota Final</strong>
-              {% if candidate.evaluation.criterios_avaliados is defined and candidate.evaluation.criterios_avaliados < candidate.evaluation.criterios_total %}
+              {% if evaluation_display.criterios_avaliados is defined and evaluation_display.criterios_avaliados < evaluation_display.criterios_total %}
                 <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted); margin-left:0.5rem;">
-                  · calculada sobre {{ candidate.evaluation.criterios_avaliados }} de {{ candidate.evaluation.criterios_total }} critérios
+                  · calculada sobre {{ evaluation_display.criterios_avaliados }} de {{ evaluation_display.criterios_total }} critérios
                 </span>
               {% endif %}
             </td>
@@ -94,7 +94,7 @@
   <!-- Detalhamento por critério -->
   <div class="section-title" style="margin-bottom: 1rem;">Detalhamento por Critério</div>
 
-  {% for av in candidate.evaluation.avaliacoes %}
+  {% for av in evaluation_display.avaliacoes %}
 
   {% if av.sem_evidencia %}
   <div class="criteria-block" style="border-left: 3px solid #e2e8f0;">
@@ -132,7 +132,19 @@
     </div>
     <div class="criteria-body">
 
-      {% if av.evidencias %}
+      {% if av.evidencias_resolvidas %}
+        <div class="evidence-label">Evidências</div>
+        {% for er in av.evidencias_resolvidas %}
+        <div class="evidence-block">
+          <div class="evidence-ref">{{ er.ref }}</div>
+          <div class="evidence-lines">
+            {% for linha in er.linhas %}
+            <div class="evidence-line">{{ linha }}</div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      {% elif av.evidencias %}
         <div class="evidence-label">Evidências</div>
         <ul class="evidence-list">
           {% for ev in av.evidencias %}
@@ -161,4 +173,5 @@
     <p>Avaliação não disponível para este candidato.</p>
   </div>
 {% endif %}
+
 {% endblock %}

@@ -579,6 +579,41 @@ table tr:hover td { background: #fafafa; }
   line-height: 1.5;
 }
 
+/* Evidence block (resolved transcript lines) */
+.evidence-block {
+  border-left: 3px solid #38bdf8;
+  border-radius: 0 4px 4px 0;
+  background: #f0f9ff;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+
+.evidence-ref {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #0369a1;
+  background: #e0f2fe;
+  padding: 0.2rem 0.75rem;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.evidence-lines {
+  padding: 0.5rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.evidence-line {
+  font-size: 0.8375rem;
+  color: #0c4a6e;
+  font-family: 'Courier New', Courier, monospace;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .no-evidence {
   font-size: 0.85rem;
   color: var(--text-muted);
