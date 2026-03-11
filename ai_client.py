@@ -139,6 +139,22 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
 
 _FORMAT_AVALIAR_CANDIDATO = """\
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LINGUAGEM DOS CAMPOS DE TEXTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Os campos de texto ("lacunas", "motivo", "evidencia_esperada") são exibidos diretamente ao recrutador.
+Escreva-os em linguagem natural, como um avaliador humano escreveria num relatório de entrevista.
+
+PROIBIDO nos campos de texto:
+✗ Referências a tipos de evidência ("tipo (1)", "tipo (2)", "tipo (3)")
+✗ Termos internos do sistema ("STATUS", "ETAPA", "classificação", "insuficiente", "positiva", "negativa")
+✗ Referências ao algoritmo ou ao processo de avaliação
+
+EXEMPLOS de linguagem correta:
+- lacunas:  "Não apresentou exemplos de situações onde precisou tomar decisões com informações incompletas."
+- motivo:   "A entrevista não trouxe situações em que o candidato precisou estruturar ou priorizar demandas concorrentes."
+- evidencia_esperada: "Relatos de momentos em que o candidato organizou projetos simultâneos, definiu prioridades ou gerenciou prazos."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATOS DOS OBJETOS DE AVALIAÇÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -149,7 +165,7 @@ Objeto COM nota (quando há evidência para avaliar):
   "peso": 20,
   "contribuicao": 12.0,
   "evidencias": ["[linhas 12–18] 'trecho exato das linhas 12 a 18'"],
-  "lacunas": "O que não foi demonstrado"
+  "lacunas": "Descrição em linguagem natural do que não foi demonstrado na entrevista."
 }
 
 Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
@@ -157,8 +173,8 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
   "criterio": "NomeDoCriterio",
   "peso": 20,
   "sem_evidencia": true,
-  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
-  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+  "motivo": "Descrição em linguagem natural explicando que a entrevista não trouxe exemplos claros deste comportamento.",
+  "evidencia_esperada": "Descrição em linguagem natural do que seria necessário ouvir para avaliar este critério."
 }
 
 Regras adicionais para objetos COM nota:
@@ -167,11 +183,12 @@ Regras adicionais para objetos COM nota:
 - nota 1 ou 2: exige STATUS negativa — trechos que demonstram comportamento fraco ou problemático em ação; NUNCA atribua nota baixa apenas porque o comportamento não apareceu
 - contribuicao = (nota × peso) / 5
 - evidencias: TRECHOS CONTÍNUOS referenciados como "[linhas X–Y] 'trecho exato'"
-- lacunas: o que ficou ausente ou não foi demonstrado
+- lacunas: linguagem natural — o que ficou ausente ou não foi demonstrado na entrevista
 
 Regra para objetos SEM evidência:
 - Use sempre que o STATUS for insuficiente — a transcrição não permite avaliar o critério
 - STATUS insuficiente NUNCA gera nota, nem baixa nem alta
+- motivo e evidencia_esperada: linguagem natural, sem termos técnicos internos
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {
@@ -835,6 +852,13 @@ Ao citar evidências, use sempre intervalos contínuos de linhas no formato "[li
 Interrupções curtas do entrevistador não quebram o trecho — mantenha o intervalo contínuo.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LINGUAGEM DOS CAMPOS DE TEXTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Os campos de texto são exibidos diretamente ao recrutador. Escreva-os em linguagem natural.
+PROIBIDO: termos internos como "tipo (1)", "tipo (2)", "STATUS", "ETAPA", "classificação".
+Use linguagem de relatório de entrevista — como um avaliador humano escreveria.
+
 FORMATO A — com evidência (use quando há base na transcrição para avaliar):
 {{
   "criterio": "{nome_c}",
@@ -842,7 +866,7 @@ FORMATO A — com evidência (use quando há base na transcrição para avaliar)
   "peso": {peso_c},
   "contribuicao": {round(3 * peso_c / 5, 1)},
   "evidencias": ["[linhas 12–18] 'trecho exato das linhas 12 a 18'"],
-  "lacunas": "O que não foi demonstrado ou estava ausente"
+  "lacunas": "Descrição em linguagem natural do que não foi demonstrado na entrevista."
 }}
 
 FORMATO B — sem evidência (use quando a transcrição não permite avaliar este critério):
@@ -850,8 +874,8 @@ FORMATO B — sem evidência (use quando a transcrição não permite avaliar es
   "criterio": "{nome_c}",
   "peso": {peso_c},
   "sem_evidencia": true,
-  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
-  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+  "motivo": "Descrição em linguagem natural explicando que a entrevista não trouxe exemplos claros deste comportamento.",
+  "evidencia_esperada": "Descrição em linguagem natural do que seria necessário ouvir para avaliar este critério."
 }}
 
 Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente um dos dois formatos acima."""
@@ -1028,6 +1052,13 @@ REGRAS ABSOLUTAS:
 - Só cite linhas que realmente existem na transcrição.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LINGUAGEM DOS CAMPOS DE TEXTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Os campos "lacunas", "motivo" e "evidencia_esperada" são exibidos diretamente ao recrutador.
+Escreva-os como um avaliador humano escreveria num relatório de entrevista — em linguagem natural.
+PROIBIDO: termos como "tipo (1)", "tipo (2)", "STATUS", "ETAPA", "classificação interna", "insuficiente".
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATOS DOS OBJETOS DE AVALIAÇÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1038,7 +1069,7 @@ Objeto COM nota (quando há evidência para avaliar):
   "peso": 20,
   "contribuicao": 12.0,
   "evidencias": ["[linhas 12–18] 'trecho exato das linhas 12 a 18'"],
-  "lacunas": "O que não foi demonstrado"
+  "lacunas": "Descrição em linguagem natural do que não foi demonstrado na entrevista."
 }}
 
 Objeto SEM evidência (quando a transcrição não permite avaliar este critério):
@@ -1046,8 +1077,8 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
   "criterio": "NomeDoCriterio",
   "peso": 20,
   "sem_evidencia": true,
-  "motivo": "Explicação breve de por que a transcrição não permite avaliar este critério.",
-  "evidencia_esperada": "Que tipo de falas ou situações seriam necessárias para avaliar este critério."
+  "motivo": "Descrição em linguagem natural explicando que a entrevista não trouxe exemplos claros deste comportamento.",
+  "evidencia_esperada": "Descrição em linguagem natural do que seria necessário ouvir para avaliar este critério."
 }}
 
 Regras adicionais para objetos COM nota:
@@ -1056,11 +1087,12 @@ Regras adicionais para objetos COM nota:
 - nota 1 ou 2: exige STATUS negativa — trechos que demonstram comportamento fraco ou problemático em ação; NUNCA atribua nota baixa apenas porque o comportamento não apareceu
 - contribuicao = (nota × peso) / 5
 - evidencias: TRECHOS CONTÍNUOS referenciados como "[linhas X–Y] 'trecho exato'"
-- lacunas: o que ficou ausente ou não foi demonstrado
+- lacunas: linguagem natural — o que ficou ausente ou não foi demonstrado na entrevista
 
 Regra para objetos SEM evidência:
 - Use sempre que o STATUS for insuficiente — a transcrição não permite avaliar o critério
 - STATUS insuficiente NUNCA gera nota, nem baixa nem alta
+- motivo e evidencia_esperada: linguagem natural, sem termos técnicos internos
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {{
