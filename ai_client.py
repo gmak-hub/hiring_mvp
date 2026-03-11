@@ -148,7 +148,7 @@ Objeto COM nota (quando há evidência para avaliar):
   "nota": 3,
   "peso": 20,
   "contribuicao": 12.0,
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": ["[Bloco 3] 'trecho relevante do candidato dentro do bloco'"],
   "lacunas": "O que não foi demonstrado"
 }
 
@@ -164,7 +164,7 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
 - contribuicao = (nota × peso) / 5
-- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- evidencias: TRECHOS DIRETOS com número do bloco no formato "[Bloco N] 'trecho exato do candidato'"
 - lacunas: o que ficou ausente ou não foi demonstrado
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
@@ -173,6 +173,50 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
     { objeto com nota OU sem evidência para cada critério }
   ]
 }"""
+
+
+_PROMPT_SEGMENTAR = """\
+Você é um analista especializado em entrevistas comportamentais.
+Sua tarefa é dividir a transcrição abaixo em blocos de conversa coerentes.
+
+REGRAS DE SEGMENTAÇÃO:
+1. Um bloco representa UMA PERGUNTA + RESPOSTA PRINCIPAL do candidato.
+2. O bloco começa quando o entrevistador faz uma nova pergunta relevante ou muda claramente de assunto.
+3. O bloco termina quando o candidato finaliza o raciocínio principal ou uma nova pergunta inicia outro tópico.
+4. Interrupções curtas, confirmações ou comentários breves NÃO quebram o bloco.
+   Exemplos que não quebram: "aham", "entendi", "pode continuar", pequenas perguntas de clarificação.
+5. Um bloco deve capturar uma UNIDADE COMPLETA DE SIGNIFICADO, mesmo que tenha várias linhas.
+
+FORMATO DE SAÍDA — siga exatamente este padrão:
+
+BLOCO 1
+Tema: [resumo curto do assunto em até 10 palavras]
+
+Trecho da entrevista:
+[linhas completas da transcrição, mantendo os falantes e o texto original]
+
+Resumo do que o candidato disse:
+[2–3 frases descrevendo o raciocínio e os pontos principais]
+
+---
+
+BLOCO 2
+Tema: [...]
+
+Trecho da entrevista:
+[...]
+
+Resumo do que o candidato disse:
+[...]
+
+---
+
+[continue para todos os blocos]
+
+IMPORTANTE: Inclua TODO o conteúdo da transcrição nos blocos. Não omita nenhuma linha.
+
+=== TRANSCRIÇÃO ===
+{transcricao}"""
 
 
 # ── Custom exceptions ──────────────────────────────────────────────────────────
@@ -352,11 +396,14 @@ def _numerar_linhas(transcricao: str) -> str:
 
 
 def _ordenar_evidencias(evidencias: list[str]) -> list[str]:
-    """Sort evidence citations by their transcript line number ([N] 'quote')."""
-    def _linha(ev: str) -> int:
+    """Sort evidence citations by block number ([Bloco N] ...) or line number ([N] ...)."""
+    def _num(ev: str) -> int:
+        m = re.search(r"\[Bloco\s+(\d+)\]", ev.strip(), re.IGNORECASE)
+        if m:
+            return int(m.group(1))
         m = re.match(r"\[(\d+)\]", ev.strip())
         return int(m.group(1)) if m else 999999
-    return sorted(evidencias, key=_linha)
+    return sorted(evidencias, key=_num)
 
 
 def _normalizar_pesos_inplace(criterios: list) -> None:
@@ -753,6 +800,26 @@ Retorne APENAS JSON válido (sem markdown, sem explicação):
     return rubrica
 
 
+def segmentar_transcricao(transcricao: str) -> str:
+    """Segment a transcript into semantic context blocks using AI.
+
+    Returns the segmented transcript as plain text. Each block contains:
+    - Tema: short summary of the topic
+    - Trecho da entrevista: original lines from the transcript
+    - Resumo do que o candidato disse: 2–3 sentence summary
+
+    Raises AIParsingError if the response contains no recognizable blocks.
+    """
+    prompt = _PROMPT_SEGMENTAR.format(transcricao=transcricao.strip())
+    texto = _chamar_api(prompt, max_tokens=4096)
+    texto = texto.strip()
+    if not re.search(r"BLOCO\s+\d+", texto, re.IGNORECASE):
+        raise AIParsingError(
+            "Segmentação da transcrição retornou formato inesperado (nenhum bloco detectado)."
+        )
+    return texto
+
+
 def avaliar_criterio_unico(criterio: dict, nome_candidato: str, transcricao: str) -> dict:
     """Evaluate a single criterion for a candidate given their transcript.
 
@@ -761,7 +828,7 @@ def avaliar_criterio_unico(criterio: dict, nome_candidato: str, transcricao: str
     - Unscored: {"criterio", "peso", "sem_evidencia": True, "motivo", "evidencia_esperada"}
     Raises AIParsingError if the response is invalid.
     """
-    numerada = _numerar_linhas(transcricao)
+    blocos = segmentar_transcricao(transcricao)
     rubrica_txt = "\n".join(f"  {k}: {v}" for k, v in sorted(criterio["rubrica"].items()))
     nome_c = criterio["nome"]
     peso_c = criterio["peso"]
@@ -769,21 +836,24 @@ def avaliar_criterio_unico(criterio: dict, nome_candidato: str, transcricao: str
     prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos.
 Avalie o candidato abaixo para UM ÚNICO critério comportamental.
 
+A entrevista já foi segmentada em blocos coerentes. Cada bloco representa uma pergunta + resposta completa.
+
 Candidato: {nome_candidato}
 
 CRITÉRIO: {nome_c} (Peso: {peso_c}%)
 Rubrica:
 {rubrica_txt}
 
-=== TRANSCRIÇÃO (com número de linhas) ===
-{numerada}
+=== ENTREVISTA SEGMENTADA EM BLOCOS ===
+{blocos}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTRUÇÕES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PASSO 1 — Verifique se há evidência real na transcrição para este critério.
+PASSO 1 — Leia todos os blocos e identifique quais contêm evidências para este critério.
 Procure falas do candidato que demonstrem diretamente o comportamento descrito na rubrica.
+Avalie o raciocínio completo dentro de cada bloco — nunca frases isoladas fora de contexto.
 
 SE houver evidência suficiente → avalie com nota 1–5 e retorne o formato A.
 SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o formato B.
@@ -792,17 +862,17 @@ REGRA CRÍTICA: Ausência de evidência ≠ desempenho ruim.
 Não invente contexto. Não assuma coisas não ditas na transcrição.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FORMATO A — com evidência (use quando há base na transcrição para avaliar):
+FORMATO A — com evidência (use quando há base nos blocos para avaliar):
 {{
   "criterio": "{nome_c}",
   "nota": 3,
   "peso": {peso_c},
   "contribuicao": {round(3 * peso_c / 5, 1)},
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": ["[Bloco 3] 'trecho relevante do candidato dentro do bloco'"],
   "lacunas": "O que não foi demonstrado ou estava ausente"
 }}
 
-FORMATO B — sem evidência (use quando a transcrição não permite avaliar este critério):
+FORMATO B — sem evidência (use quando os blocos não permitem avaliar este critério):
 {{
   "criterio": "{nome_c}",
   "peso": {peso_c},
@@ -837,7 +907,7 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
 
 
 def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str, prompt_template: str | None = None) -> dict:
-    numerada = _numerar_linhas(transcricao)
+    blocos = segmentar_transcricao(transcricao)
 
     blocos_criterio = []
     for c in scorecard["criterios"]:
@@ -854,19 +924,21 @@ def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str, pr
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"Candidato: {nome_candidato}\n\n"
             f"=== SCORECARD ===\n{texto_criterios}\n\n"
-            f"=== TRANSCRIÇÃO (com número de linhas) ===\n{numerada}"
+            f"=== ENTREVISTA SEGMENTADA EM BLOCOS ===\n{blocos}"
         )
         prompt = contexto + "\n\n" + prompt_template + "\n\n" + _FORMAT_AVALIAR_CANDIDATO
     else:
         prompt = f"""Você é um entrevistador especialista em avaliação estruturada de candidatos. Avalie o candidato abaixo com base no scorecard fornecido.
+
+A entrevista já foi segmentada em blocos coerentes. Cada bloco representa uma pergunta + resposta completa do candidato.
 
 Candidato: {nome_candidato}
 
 === SCORECARD ===
 {texto_criterios}
 
-=== TRANSCRIÇÃO (com número de linhas) ===
-{numerada}
+=== ENTREVISTA SEGMENTADA EM BLOCOS ===
+{blocos}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTRUÇÕES — LEIA COM ATENÇÃO
@@ -874,15 +946,15 @@ INSTRUÇÕES — LEIA COM ATENÇÃO
 
 Para CADA critério do scorecard, siga este processo:
 
-PASSO 1 — Verifique se há evidência real na transcrição.
-Procure falas do candidato que demonstrem diretamente o comportamento avaliado naquele critério.
+PASSO 1 — Leia todos os blocos e identifique quais contêm evidências para este critério.
+Procure falas do candidato que demonstrem diretamente o comportamento avaliado.
+Avalie o raciocínio completo dentro de cada bloco — nunca frases isoladas fora de contexto.
 
 SE houver evidência suficiente → avalie com nota 1–5 conforme a rubrica (use o objeto "com nota").
 SE NÃO houver evidência suficiente → NÃO atribua nota (use o objeto "sem evidência").
 
 REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
 Não invente contexto. Não assuma comportamentos não descritos na transcrição.
-Só cite linhas que realmente existem na transcrição.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATOS DOS OBJETOS DE AVALIAÇÃO
@@ -894,7 +966,7 @@ Objeto COM nota (quando há evidência para avaliar):
   "nota": 3,
   "peso": 20,
   "contribuicao": 12.0,
-  "evidencias": ["[12] 'citação exata da linha 12'"],
+  "evidencias": ["[Bloco 3] 'trecho relevante do candidato dentro do bloco'"],
   "lacunas": "O que não foi demonstrado"
 }}
 
@@ -910,7 +982,7 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
 - contribuicao = (nota × peso) / 5
-- evidencias: CITAÇÕES DIRETAS com número de linha no formato "[LINHA] 'citação exata'"
+- evidencias: TRECHOS DIRETOS com número do bloco no formato "[Bloco N] 'trecho exato do candidato'"
 - lacunas: o que ficou ausente ou não foi demonstrado
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
