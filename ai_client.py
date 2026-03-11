@@ -849,8 +849,11 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
     return dados
 
 
+_RESUMO_MAX_CHARS = 140
+
+
 def _gerar_resumo(nome_candidato: str, avaliacoes: list) -> str:
-    """Gera um resumo de 3–4 frases do candidato a partir da avaliação já feita (não da transcrição)."""
+    """Gera um micro-resumo (≤140 chars, 2 frases) a partir da avaliação final — não da transcrição."""
     linhas = []
     for av in avaliacoes:
         if av.get("sem_evidencia"):
@@ -864,20 +867,33 @@ def _gerar_resumo(nome_candidato: str, avaliacoes: list) -> str:
             )
     avaliacao_texto = "\n".join(linhas)
 
-    prompt = f"""Com base na avaliação estruturada do candidato {nome_candidato}, escreva um resumo de 3 a 4 frases.
+    prompt = f"""Com base na avaliação do candidato {nome_candidato}, escreva um micro-resumo.
 
 AVALIAÇÃO:
 {avaliacao_texto}
 
-REGRAS:
-- Máximo de 4 frases curtas e diretas
-- Objetivo e informativo — sem linguagem corporativa vaga ("excelente profissional", "grande potencial", etc.)
-- Sintetize o desempenho geral e os principais comportamentos observados na entrevista
-- Se houver limitação ou risco relevante, mencione-o
-- Baseie-se apenas nos dados acima — não invente comportamentos
-- Retorne apenas o texto corrido, sem título nem formatação"""
+REGRAS ESTRITAS:
+- Máximo de 2 frases curtas
+- Limite absoluto de 140 caracteres no total (incluindo espaços e pontuação)
+- Mencione o principal comportamento ou ponto forte observado
+- Mencione a principal limitação, risco ou lacuna
+- Use comportamentos observáveis — sem adjetivos vagos ou linguagem corporativa
+- Baseie-se apenas nos dados acima
+- Retorne apenas o texto, sem título nem formatação"""
 
-    return _chamar_api(prompt, max_tokens=300).strip()
+    texto = _chamar_api(prompt, max_tokens=80).strip()
+
+    # Hard cap: truncate at last sentence boundary within limit, or cut at word boundary
+    if len(texto) > _RESUMO_MAX_CHARS:
+        cortado = texto[:_RESUMO_MAX_CHARS]
+        ultimo_ponto = max(cortado.rfind(". "), cortado.rfind("! "), cortado.rfind("? "))
+        if ultimo_ponto > _RESUMO_MAX_CHARS // 2:
+            texto = cortado[: ultimo_ponto + 1]
+        else:
+            ultimo_espaco = cortado.rfind(" ")
+            texto = cortado[:ultimo_espaco].rstrip(",:;") + "…"
+
+    return texto
 
 
 def avaliar_candidato(scorecard: dict, nome_candidato: str, transcricao: str, prompt_template: str | None = None) -> dict:
