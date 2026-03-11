@@ -163,9 +163,15 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
 
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
+- nota 3, 4 ou 5: exige STATUS positiva — trechos que demonstram o comportamento esperado
+- nota 1 ou 2: exige STATUS negativa — trechos que demonstram comportamento fraco ou problemático em ação; NUNCA atribua nota baixa apenas porque o comportamento não apareceu
 - contribuicao = (nota × peso) / 5
 - evidencias: TRECHOS CONTÍNUOS referenciados como "[linhas X–Y] 'trecho exato'"
 - lacunas: o que ficou ausente ou não foi demonstrado
+
+Regra para objetos SEM evidência:
+- Use sempre que o STATUS for insuficiente — a transcrição não permite avaliar o critério
+- STATUS insuficiente NUNCA gera nota, nem baixa nem alta
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {
@@ -792,14 +798,38 @@ Rubrica:
 INSTRUÇÕES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PASSO 1 — Verifique se há evidência real na transcrição para este critério.
-Procure falas do candidato que demonstrem diretamente o comportamento descrito na rubrica.
+PASSO 1 — COLETAR E CLASSIFICAR EVIDÊNCIAS
+Procure na transcrição trechos onde o candidato demonstra o comportamento descrito na rubrica.
+Classifique cada trecho encontrado quanto ao tipo de conteúdo:
+  (1) Evidência comportamental direta — o candidato descreve algo que fez, decidiu ou executou.
+  (2) Relato de feedback ou autocrítica — o candidato conta algo que disseram sobre ele, ou uma crítica recebida.
+  (3) Reflexão ou opinião — o candidato fala de forma hipotética, abstrata ou genérica.
 
-SE houver evidência suficiente → avalie com nota 1–5 e retorne o formato A.
-SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o formato B.
+Apenas trechos do tipo (1) e (2) com aprendizado demonstrado podem ser usados como evidência.
+Trechos do tipo (3) não são evidência.
 
-REGRA CRÍTICA: Ausência de evidência ≠ desempenho ruim.
-Não invente contexto. Não assuma coisas não ditas na transcrição.
+PASSO 2 — CLASSIFICAR O STATUS DA EVIDÊNCIA (obrigatório antes de qualquer nota)
+Com base nos trechos coletados, determine o status da evidência. Existem exatamente três possibilidades:
+
+  STATUS positiva:
+  Há trechos concretos (tipo 1, ou tipo 2 com aprendizado) que mostram o comportamento esperado.
+  → Use o formato A com nota 3, 4 ou 5.
+
+  STATUS negativa:
+  Há trechos concretos onde o candidato demonstrou comportamento fraco ou problemático,
+  sem aprendizado ou correção visível.
+  → Use o formato A com nota 1 ou 2.
+
+  STATUS insuficiente:
+  A transcrição não traz informação suficiente para avaliar o critério.
+  Não há trechos que demonstrem o comportamento — nem positivos nem negativos.
+  → Use o formato B (sem evidência). NÃO atribua nota.
+
+REGRAS ABSOLUTAS:
+- Nunca decida a nota sem antes classificar o status (Passo 2).
+- STATUS insuficiente NUNCA gera nota — nem baixa nem alta.
+- Nota 1 ou 2 exige STATUS negativa com trechos da transcrição que mostrem o comportamento problemático.
+- Não invente contexto. Não assuma coisas não ditas na transcrição.
 
 Ao citar evidências, use sempre intervalos contínuos de linhas no formato "[linhas X–Y] 'trecho exato'".
 Interrupções curtas do entrevistador não quebram o trecho — mantenha o intervalo contínuo.
@@ -949,31 +979,53 @@ Regras:
 - Se mais de dois critérios parecerem relevantes, escolha apenas os DOIS mais fortes.
 - Marque apenas critérios claramente demonstrados — não force associações vagas.
 
-ETAPA 3 — AGRUPAR EVIDÊNCIAS POR CRITÉRIO
-Reúna todos os trechos mapeados para cada critério do scorecard.
-- Se um critério não tiver nenhum trecho mapeado, ele será avaliado como "sem evidência".
-- Cada evidência deve ser referenciada como [linhas X–Y] 'trecho exato'.
-
-ETAPA 4 — AVALIAR CADA CRITÉRIO
-Para cada critério, com base nas evidências agrupadas na etapa anterior:
-
-Antes de usar qualquer trecho como evidência, classifique mentalmente o tipo de conteúdo:
+ETAPA 3 — AGRUPAR E CLASSIFICAR EVIDÊNCIAS POR CRITÉRIO
+Para cada critério do scorecard, reúna todos os trechos mapeados na Etapa 2.
+Depois, classifique cada trecho quanto ao tipo de conteúdo:
   (1) Evidência comportamental direta — o candidato descreve algo que fez, decidiu ou executou.
   (2) Relato de feedback ou autocrítica — o candidato conta algo que disseram sobre ele, ou uma crítica que recebeu.
   (3) Reflexão ou opinião — o candidato fala de forma hipotética, abstrata ou genérica.
 
-Regras de classificação:
+Regras de tipo:
 - Apenas trechos do tipo (1) devem ser usados como evidência forte.
-- Trechos do tipo (2) NÃO são evidência automática de fraqueza. Quando o candidato menciona um feedback negativo, avalie: ele demonstra aprendizado? Explica como mudou? Se sim, o foco deve ser reflexão e evolução — não a crítica em si. Nunca trate uma frase negativa isolada como prova de incompetência quando está dentro de uma pergunta de feedback, autocrítica ou reflexão sobre erros.
-- Só considere fraqueza real quando houver descrição clara de comportamento recorrente ou exemplo concreto que demonstre a falha em ação.
+- Trechos do tipo (3) NÃO são evidência — não use como base para nota.
+- Trechos do tipo (2) (autocrítica): avalie se o candidato demonstra aprendizado ou mudança de comportamento.
+  Se sim → evidência positiva (foco na reflexão e evolução, não na crítica).
+  Se não → pode ser evidência negativa apenas se a falha for descrita em ação concreta e recorrente.
 
-- Compare as evidências com a rubrica do critério.
-- SE houver evidência suficiente → atribua nota 1–5 e retorne o objeto "com nota".
-- SE NÃO houver evidência suficiente → NÃO atribua nota e retorne o objeto "sem evidência".
+ETAPA 4 — AVALIAR CADA CRITÉRIO (em duas sub-etapas obrigatórias)
 
-REGRA CRÍTICA: Ausência de evidência NÃO significa desempenho ruim.
-Não invente contexto. Não assuma comportamentos não descritos na transcrição.
-Só cite linhas que realmente existem na transcrição.
+ETAPA 4A — CLASSIFICAR O STATUS DA EVIDÊNCIA
+Para cada critério, determine obrigatoriamente o status da evidência antes de qualquer nota.
+Existem exatamente três possibilidades:
+
+  STATUS positiva:
+  Há trechos concretos (tipo 1, ou tipo 2 com aprendizado demonstrado) que mostram o comportamento esperado.
+  → O critério pode receber nota 3, 4 ou 5.
+
+  STATUS negativa:
+  Há trechos concretos onde o candidato demonstrou explicitamente comportamento fraco ou problemático,
+  sem aprendizado ou correção visível.
+  → O critério pode receber nota 1 ou 2.
+
+  STATUS insuficiente:
+  A transcrição não traz informação suficiente para avaliar o critério.
+  Não há trechos que demonstrem o comportamento — nem positivos nem negativos.
+  → Retorne o objeto SEM EVIDÊNCIA. NÃO atribua nota.
+
+ETAPA 4B — DECIDIR A NOTA
+Com base exclusivamente no status determinado na Etapa 4A:
+- STATUS positiva  → nota 3, 4 ou 5 (use a rubrica para escolher o nível exato)
+- STATUS negativa  → nota 1 ou 2 (use a rubrica para escolher o nível exato)
+- STATUS insuficiente → sem_evidencia: true — não atribua nota
+
+REGRAS ABSOLUTAS:
+- Nunca decida a nota sem antes classificar o status da evidência (Etapa 4A).
+- STATUS insuficiente NUNCA gera nota — nem baixa nem alta.
+- Nota 1 ou 2 exige STATUS negativa com trechos da transcrição que mostrem o comportamento problemático.
+- Nota 3, 4 ou 5 exige STATUS positiva com trechos que sustentem a competência demonstrada.
+- Não invente contexto. Não assuma comportamentos não descritos na transcrição.
+- Só cite linhas que realmente existem na transcrição.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATOS DOS OBJETOS DE AVALIAÇÃO
@@ -1000,9 +1052,15 @@ Objeto SEM evidência (quando a transcrição não permite avaliar este critéri
 
 Regras adicionais para objetos COM nota:
 - nota: inteiro de 1 a 5, estritamente de acordo com a rubrica
+- nota 3, 4 ou 5: exige STATUS positiva — trechos que demonstram o comportamento esperado
+- nota 1 ou 2: exige STATUS negativa — trechos que demonstram comportamento fraco ou problemático em ação; NUNCA atribua nota baixa apenas porque o comportamento não apareceu
 - contribuicao = (nota × peso) / 5
 - evidencias: TRECHOS CONTÍNUOS referenciados como "[linhas X–Y] 'trecho exato'"
 - lacunas: o que ficou ausente ou não foi demonstrado
+
+Regra para objetos SEM evidência:
+- Use sempre que o STATUS for insuficiente — a transcrição não permite avaliar o critério
+- STATUS insuficiente NUNCA gera nota, nem baixa nem alta
 
 Retorne APENAS JSON válido (sem markdown, sem explicação):
 {{
