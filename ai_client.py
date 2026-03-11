@@ -849,11 +849,11 @@ Retorne APENAS JSON válido (sem markdown, sem explicação), usando exatamente 
     return dados
 
 
-_RESUMO_MAX_CHARS = 140
+_RESUMO_MAX_CHARS = 220
 
 
 def _gerar_resumo(nome_candidato: str, avaliacoes: list) -> str:
-    """Gera um micro-resumo (≤140 chars, 2 frases) a partir da avaliação final — não da transcrição."""
+    """Gera um resumo avaliativo (≤220 chars, 2–3 frases) a partir da avaliação final — não da transcrição."""
     linhas = []
     for av in avaliacoes:
         if av.get("sem_evidencia"):
@@ -867,21 +867,24 @@ def _gerar_resumo(nome_candidato: str, avaliacoes: list) -> str:
             )
     avaliacao_texto = "\n".join(linhas)
 
-    prompt = f"""Com base na avaliação do candidato {nome_candidato}, escreva um micro-resumo.
+    prompt = f"""Com base na avaliação do candidato {nome_candidato}, escreva um resumo avaliativo em 2 ou 3 frases curtas.
 
 AVALIAÇÃO:
 {avaliacao_texto}
 
-REGRAS ESTRITAS:
-- Máximo de 2 frases curtas
-- Limite absoluto de 140 caracteres no total (incluindo espaços e pontuação)
-- Mencione o principal comportamento ou ponto forte observado
-- Mencione a principal limitação, risco ou lacuna
-- Use comportamentos observáveis — sem adjetivos vagos ou linguagem corporativa
-- Baseie-se apenas nos dados acima
-- Retorne apenas o texto, sem título nem formatação"""
+ESTRUTURA OBRIGATÓRIA:
+1ª frase: avaliação geral do nível do candidato (ex: "Perfil executor sólido.", "Candidato mediano com pontos críticos.", "Perfil analítico acima da média.")
+2ª frase: principal comportamento positivo observado, com base nas evidências
+3ª frase (opcional): principal limitação ou risco identificado
 
-    texto = _chamar_api(prompt, max_tokens=80).strip()
+REGRAS:
+- Limite absoluto de 220 caracteres no total
+- Use comportamentos observáveis — sem adjetivos vagos ou linguagem corporativa
+- Nunca use expressões como "excelente profissional", "grande potencial", "proativo", "dinâmico"
+- Baseie-se apenas nos dados da avaliação acima
+- Retorne apenas o texto corrido, sem título nem formatação"""
+
+    texto = _chamar_api(prompt, max_tokens=120).strip()
 
     # Hard cap: truncate at last sentence boundary within limit, or cut at word boundary
     if len(texto) > _RESUMO_MAX_CHARS:
